@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build / dist
+dist/
+build/
+*.tsbuildinfo
+
+# Env and secrets
+.env
+.env.local
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+sessions/
+
+# Optional: uncomment if you want to ignore session output
+# sessions/*.json
