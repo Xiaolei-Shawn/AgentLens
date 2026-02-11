@@ -1,0 +1,12 @@
+{
+  "id": "minimal-001",
+  "started_at": "2025-02-11T10:00:00.000Z",
+  "title": "Minimal sample session",
+  "user_message": "Add a hello world script",
+  "events": [
+    { "type": "session_start", "at": "2025-02-11T10:00:00.000Z" },
+    { "type": "plan_step", "step": "Create script file", "index": 0 },
+    { "type": "file_create", "path": "hello.sh", "content": "#!/bin/bash\necho Hello" },
+    { "type": "deliverable", "title": "Done", "content": "hello.sh added" }
+  ]
+}

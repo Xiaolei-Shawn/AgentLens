@@ -1,0 +1,17 @@
+{
+  "id": "rich-001",
+  "started_at": "2025-02-11T12:00:00.000Z",
+  "title": "Rich sample session (all event types)",
+  "user_message": "Implement login and add a README",
+  "events": [
+    { "type": "session_start", "at": "2025-02-11T12:00:00.000Z" },
+    { "type": "plan_step", "step": "Scaffold auth module", "index": 0 },
+    { "type": "file_create", "path": "src/auth.ts", "content": "export function login() {}", "at": "2025-02-11T12:01:00.000Z" },
+    { "type": "plan_step", "step": "Add login logic", "index": 1 },
+    { "type": "file_edit", "path": "src/auth.ts", "old_content": "export function login() {}", "new_content": "export function login(user: string) { return true; }", "at": "2025-02-11T12:02:00.000Z" },
+    { "type": "tool_call", "name": "read_file", "args": { "path": "package.json" }, "result": { "name": "my-app" }, "at": "2025-02-11T12:03:00.000Z" },
+    { "type": "file_create", "path": "README.md", "content": "# My App\n\nLogin via auth.login().", "at": "2025-02-11T12:04:00.000Z" },
+    { "type": "file_delete", "path": "legacy.js", "at": "2025-02-11T12:05:00.000Z" },
+    { "type": "deliverable", "title": "Login and README", "content": "Auth module and README added; legacy.js removed.", "at": "2025-02-11T12:06:00.000Z" }
+  ]
+}

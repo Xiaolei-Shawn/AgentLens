@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/session.schema.json",
+  "title": "Session",
+  "description": "Canonical session schema for MCP, web app, and Remotion",
+  "type": "object",
+  "required": ["id", "started_at", "title", "user_message", "events"],
+  "properties": {
+    "id": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "title": { "type": "string" },
+    "user_message": { "type": "string" },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/SessionEvent" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "SessionEvent": {
+      "oneOf": [
+        { "$ref": "#/$defs/SessionStartEvent" },
+        { "$ref": "#/$defs/PlanStepEvent" },
+        { "$ref": "#/$defs/FileEditEvent" },
+        { "$ref": "#/$defs/FileCreateEvent" },
+        { "$ref": "#/$defs/FileDeleteEvent" },
+        { "$ref": "#/$defs/DeliverableEvent" },
+        { "$ref": "#/$defs/ToolCallEvent" }
+      ]
+    },
+    "SessionStartEvent": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "session_start" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "PlanStepEvent": {
+      "type": "object",
+      "required": ["type", "step"],
+      "properties": {
+        "type": { "const": "plan_step" },
+        "step": { "type": "string" },
+        "index": { "type": "number" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "FileEditEvent": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file_edit" },
+        "path": { "type": "string" },
+        "old_content": { "type": "string" },
+        "new_content": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "FileCreateEvent": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file_create" },
+        "path": { "type": "string" },
+        "content": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "FileDeleteEvent": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file_delete" },
+        "path": { "type": "string" },
+        "old_content": { "type": "string", "description": "Last content before delete (e.g. from file_op)" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "DeliverableEvent": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "deliverable" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "ToolCallEvent": {
+      "type": "object",
+      "required": ["type", "name"],
+      "properties": {
+        "type": { "const": "tool_call" },
+        "name": { "type": "string" },
+        "args": {},
+        "result": {},
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
