@@ -1,0 +1,27 @@
+.timeline-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.timeline-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 6ch;
+}
+
+.timeline-scrubber {
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  accent-color: #646cff;
+  cursor: pointer;
+}
+
+.timeline-scrubber:focus-visible {
+  outline: 2px solid #646cff;
+  outline-offset: 2px;
+}

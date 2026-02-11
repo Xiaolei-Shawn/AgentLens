@@ -1,0 +1,40 @@
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.25rem 0;
+}
+
+.playback-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.speed-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.speed-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-right: 0.25rem;
+}
+
+.speed-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  min-width: 2.5rem;
+}
+
+.speed-btn.active {
+  background: rgba(100, 108, 255, 0.4);
+  border-color: #646cff;
+}
+
+.playback-btn:disabled,
+.speed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,54 @@
+.story-steps-panel {
+  width: 220px;
+  min-width: 180px;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+
+.panel-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.story-steps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.story-steps-list li {
+  margin-bottom: 0.25rem;
+}
+
+.story-step-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.story-step-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.story-step-btn.active {
+  background: rgba(100, 108, 255, 0.35);
+  color: #fff;
+}
+
+.story-step-btn:focus-visible {
+  outline: 2px solid #646cff;
+  outline-offset: 2px;
+}

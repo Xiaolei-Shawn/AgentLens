@@ -1,0 +1,79 @@
+.plan-nodes-panel {
+  width: 260px;
+  min-width: 220px;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+
+.plan-nodes-panel .panel-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.panel-empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.plan-nodes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plan-nodes-list li {
+  margin-bottom: 0.35rem;
+}
+
+.plan-node-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.plan-node-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.plan-node-btn.selected {
+  background: rgba(100, 108, 255, 0.25);
+  border-color: rgba(100, 108, 255, 0.5);
+  color: #fff;
+}
+
+.plan-node-btn:focus-visible {
+  outline: 2px solid #646cff;
+  outline-offset: 2px;
+}
+
+.plan-node-label {
+  font-weight: 500;
+  line-height: 1.3;
+  margin-bottom: 0.2rem;
+}
+
+.plan-node-meta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.plan-node-btn.selected .plan-node-meta {
+  color: rgba(255, 255, 255, 0.75);
+}

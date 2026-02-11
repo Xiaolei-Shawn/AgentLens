@@ -1,0 +1,77 @@
+.replay-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.replay-header {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.back-btn {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.replay-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.replay-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.replay-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.replay-main {
+  flex: 1;
+  min-width: 0;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.replay-placeholder {
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.replay-placeholder p {
+  margin: 0 0 0.5rem 0;
+}
+
+.replay-placeholder-note {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 1rem;
+}
+
+.replay-placeholder-note code {
+  font-size: 0.85em;
+  padding: 0.1em 0.3em;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.replay-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

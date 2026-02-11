@@ -1,0 +1,21 @@
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.app-error {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1rem;
+  background: rgba(180, 0, 0, 0.9);
+  color: #fff;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  z-index: 10;
+}
+
+.app-error + * {
+  margin-top: 3rem;
+}
