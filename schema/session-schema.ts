@@ -1,7 +1,7 @@
 /**
  * Canonical session schema — shared contract for MCP, web app, and Remotion.
  * Events are a discriminated union on the `type` field.
- * MCP middleware: file_op emits file_* with content fields; record_plan → plan_step; audit_event → deliverable (title=type, content=description).
+ * MCP middleware: file_op emits file_* with content fields; record_plan → plan_step; audit_event → audit_event (audit_type, description).
  */
 
 // ——— Top-level session ———
@@ -19,11 +19,21 @@ export interface Session {
 export type SessionEvent =
   | SessionStartEvent
   | PlanStepEvent
+  | AuditEvent
   | FileEditEvent
   | FileCreateEvent
   | FileDeleteEvent
   | DeliverableEvent
   | ToolCallEvent;
+
+/** Reasoning, interpretation, decisions — recorded via MCP audit_event tool. */
+export interface AuditEvent {
+  type: "audit_event";
+  /** e.g. "interpretation", "reasoning", "decision", "milestone" */
+  audit_type: string;
+  description: string;
+  at?: string;
+}
 
 export interface SessionStartEvent {
   type: "session_start";
@@ -82,6 +92,9 @@ export function isSessionStartEvent(e: SessionEvent): e is SessionStartEvent {
 }
 export function isPlanStepEvent(e: SessionEvent): e is PlanStepEvent {
   return e.type === "plan_step";
+}
+export function isAuditEvent(e: SessionEvent): e is AuditEvent {
+  return e.type === "audit_event";
 }
 export function isFileEditEvent(e: SessionEvent): e is FileEditEvent {
   return e.type === "file_edit";

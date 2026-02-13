@@ -21,12 +21,24 @@
       "oneOf": [
         { "$ref": "#/$defs/SessionStartEvent" },
         { "$ref": "#/$defs/PlanStepEvent" },
+        { "$ref": "#/$defs/AuditEvent" },
         { "$ref": "#/$defs/FileEditEvent" },
         { "$ref": "#/$defs/FileCreateEvent" },
         { "$ref": "#/$defs/FileDeleteEvent" },
         { "$ref": "#/$defs/DeliverableEvent" },
         { "$ref": "#/$defs/ToolCallEvent" }
       ]
+    },
+    "AuditEvent": {
+      "type": "object",
+      "required": ["type", "audit_type", "description"],
+      "properties": {
+        "type": { "const": "audit_event" },
+        "audit_type": { "type": "string", "description": "e.g. interpretation, reasoning, decision, milestone" },
+        "description": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
     },
     "SessionStartEvent": {
       "type": "object",
