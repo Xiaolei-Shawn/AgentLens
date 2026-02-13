@@ -8,12 +8,51 @@
   --node-border: rgba(13, 166, 242, 0.2);
   --node-text: rgba(255, 255, 255, 0.95);
   --node-muted: rgba(255, 255, 255, 0.5);
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   padding: 1rem 1.5rem;
   overflow: auto;
+}
+
+/* Centered block: carousel (event box) */
+.node-view__center {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* When toolbar is present, push content down so panel is never on top of event block */
+.node-view__toolbar--sticky + .node-view__center {
+  margin-top: 6rem;
+  padding-top: 1rem;
+}
+
+/* Toolbar: sticky at top so "Open in Flow View" is always visible (same style as Flow View panels) */
+.node-view__toolbar--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  margin-bottom: 0.25rem;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .node-view--empty {
@@ -28,8 +67,9 @@
   align-items: center;
   gap: 0.5rem;
   max-width: 56rem;
-  margin: 0 auto 1.25rem;
+  margin: 0 auto;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .node-view__nav {
@@ -183,14 +223,24 @@
   position: relative;
 }
 
-/* Icon */
+/* Icon — same shapes as Flow View (circle, diamond, triangle, square, etc.) */
 .node-view__card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 36px;
   margin: 0.35rem 0;
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
+  color: var(--node-text);
+}
+
+.node-view__card-icon-svg {
+  width: 60%;
+  height: 60%;
+  display: block;
 }
 
 .node-view__card--center .node-view__card-icon {
@@ -198,6 +248,12 @@
   height: 56px;
   margin: 0.35rem 0 0.5rem;
   background: rgba(13, 166, 242, 0.15);
+  color: var(--node-primary);
+}
+
+.node-view__card--completed .node-view__card-icon,
+.node-view__card--pending .node-view__card-icon {
+  color: var(--node-muted);
 }
 
 .node-view__card-title {
@@ -244,9 +300,11 @@
 
 /* Compact detail: single row, smaller — event carousel is the hero */
 .node-view__detail {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr 0.8fr 1.2fr;
   gap: 0.75rem;
+  margin-top: 8.5rem;
   margin-bottom: 1rem;
   max-width: 56rem;
   margin-left: auto;
@@ -367,29 +425,22 @@
   font-size: 0.7rem;
 }
 
-/* Bottom panel: Open in Flow View button */
-.node-view__actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  padding-top: 0.5rem;
-  margin-top: 0.25rem;
-}
-
 .node-view__open-flow-btn {
-  padding: 0.4rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(13, 166, 242, 0.35);
-  background: rgba(13, 166, 242, 0.12);
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(13, 166, 242, 0.4);
+  background: rgba(13, 166, 242, 0.15);
   color: var(--node-primary);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
 }
 
 .node-view__open-flow-btn:hover {
-  background: rgba(13, 166, 242, 0.2);
+  background: rgba(13, 166, 242, 0.25);
   border-color: var(--node-primary);
 }
 

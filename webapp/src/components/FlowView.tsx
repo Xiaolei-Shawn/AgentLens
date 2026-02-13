@@ -6,6 +6,7 @@ import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import type { Session } from "../types/session";
 import {
   getNodeKind,
+  getIconPath,
   isKeyMoment,
   getDurationMs,
   formatDurationMs,
@@ -166,21 +167,6 @@ function getRectBoundaryPoint(
   else if (dy < -1e-9) t = Math.min(t, -halfH / dy);
   if (t === Infinity || t <= 0) return [cx + halfW, cy];
   return [cx + t * dx, cy + t * dy];
-}
-
-/** Simple geometric shapes for event types; r chosen so shape fills most of node box. */
-function getIconPath(kind: string): string {
-  const r = 7;
-  const paths: Record<string, string> = {
-    start: `M 0,-${r} a ${r},${r} 0 1 1 0,${2 * r} a ${r},${r} 0 1 1 0,${-2 * r}`,
-    plan: `M 0,-${r} L ${r},0 L 0,${r} L ${-r},0 Z`,
-    audit: `M ${r},0 L ${r * 0.5},${-r * 0.87} L ${-r * 0.5},${-r * 0.87} L ${-r},0 L ${-r * 0.5},${r * 0.87} L ${r * 0.5},${r * 0.87} Z`,
-    tool: `M 0,-${r} L ${r},${r} L ${-r},${r} Z`,
-    file: `M ${-r},${-r} L ${r},${-r} L ${r},${r} L ${-r},${r} Z`,
-    deliverable: `M 0,-${r} L ${r * 0.95},${-r * 0.31} L ${r * 0.59},${r * 0.81} L ${-r * 0.59},${r * 0.81} L ${-r * 0.95},${-r * 0.31} Z`,
-    other: `M 0,-${r} a ${r},${r} 0 1 1 0,${2 * r} a ${r},${r} 0 1 1 0,${-2 * r}`,
-  };
-  return paths[kind] ?? paths.other;
 }
 
 export function FlowView({

@@ -11,8 +11,6 @@ import { TimelineStrip } from "./TimelineStrip";
 import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { NodeView } from "./NodeView";
-import { WorkflowPlaybackBar } from "./WorkflowPlaybackBar";
-import { getEventShortLabel } from "../lib/workflowHelpers";
 
 import "./ReplayView.css";
 
@@ -135,7 +133,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       : null;
 
   const currentEvent = eventCount > 0 ? session.events[currentIndex] : null;
-  const currentStepLabel = currentEvent ? getEventShortLabel(currentEvent) : "";
 
   const withViewTransition = useCallback((fn: () => void) => {
     const doc = typeof document !== "undefined" ? document : null;
@@ -272,20 +269,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </main>
       </div>
       <footer className="replay-footer">
-        {viewMode === "pivot" && pivotSubView === "node" ? (
-          <WorkflowPlaybackBar
-            stepIndex={currentIndex}
-            totalSteps={eventCount}
-            isPlaying={isPlaying}
-            speed={workflowSpeed}
-            onPlay={handlePlay}
-            onPause={handlePause}
-            onSeek={handleSeek}
-            onSpeedChange={setWorkflowSpeed}
-            currentLabel={currentStepLabel}
-            disabled={eventCount === 0}
-          />
-        ) : viewMode === "timeline" ? (
+        {viewMode === "timeline" ? (
           <>
             <TimelineStrip
               eventCount={eventCount}

@@ -45,6 +45,21 @@ export function getNodeKind(
   return "other";
 }
 
+/** SVG path d for a simple geometric shape by node kind (same as Flow View). */
+export function getIconPath(kind: NodeKind | string): string {
+  const r = 7;
+  const paths: Record<string, string> = {
+    start: `M 0,-${r} a ${r},${r} 0 1 1 0,${2 * r} a ${r},${r} 0 1 1 0,${-2 * r}`,
+    plan: `M 0,-${r} L ${r},0 L 0,${r} L ${-r},0 Z`,
+    audit: `M ${r},0 L ${r * 0.5},${-r * 0.87} L ${-r * 0.5},${-r * 0.87} L ${-r},0 L ${-r * 0.5},${r * 0.87} L ${r * 0.5},${r * 0.87} Z`,
+    tool: `M 0,-${r} L ${r},${r} L ${-r},${r} Z`,
+    file: `M ${-r},${-r} L ${r},${-r} L ${r},${r} L ${-r},${r} Z`,
+    deliverable: `M 0,-${r} L ${r * 0.95},${-r * 0.31} L ${r * 0.59},${r * 0.81} L ${-r * 0.59},${r * 0.81} L ${-r * 0.95},${-r * 0.31} Z`,
+    other: `M 0,-${r} a ${r},${r} 0 1 1 0,${2 * r} a ${r},${r} 0 1 1 0,${-2 * r}`,
+  };
+  return paths[kind] ?? paths.other;
+}
+
 export function getEventShortLabel(event: SessionEvent): string {
   if (event.type === "session_start") return "Start";
   if (isPlanStepEvent(event))
