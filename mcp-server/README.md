@@ -27,7 +27,31 @@ So the server is available in every chat:
 }
 ```
 
-Use the real path to your `AL` repo (e.g. `/Users/xiaoleishawn/private/AL/mcp-server/dist/index.js`) and where you want session JSON files (e.g. `/Users/xiaoleishawn/private/AL/sessions`). Restart Cursor or reload MCP so the server connects.
+Use the real path to your `AL` repo (e.g. `/Users/xiaoleishawn/private/AL/mcp-server/dist/index.js`) and where you want session JSON files (e.g. `/Users/xiaoleishawn/private/AL/sessions`). **The `args` path must point to this repo’s built server** (`AL/mcp-server/dist/index.js`). If you point to a different “al-recorder” server (e.g. another package or build), you may only get a subset of tools and miss `record_plan`, `file_op`, or `audit_event`. Restart Cursor or reload MCP so the server connects.
+
+#### Verify your MCP binding (record_plan / file_op / audit_event missing?)
+
+If the agent says “record_plan API is not exposed” or “file_op/audit_event are not available in this MCP binding,” the host is likely talking to a **different** MCP server that doesn’t implement them. This repo’s server **does** expose all of the following:
+
+| Tool | Purpose |
+|------|--------|
+| `record_session_start` | Start session |
+| `record_plan_step` | Record one plan step |
+| **`record_plan`** or **`record_plan_batch`** | Submit full roadmap (ordered steps) |
+| **`file_op`** or **`record_file_op`** | Record + execute file create/edit/delete |
+| `record_file_edit` / `record_file_create` / `record_file_delete` | Record-only file events |
+| `record_deliverable` | Deliverable event |
+| **`audit_event`** or **`record_audit_event`** | Interpretation, reasoning, decision, milestone |
+| `record_tool_call` | Tool call event |
+| `record_session_end` | End and flush session |
+| `flush_sessions` | Flush all completed sessions |
+| `list_sessions` | List saved session files |
+| `health` | Status + list of tools this server exposes |
+
+**What to do:**
+
+1. In Cursor, open **Settings → MCP** and confirm the `al-recorder` entry’s `args` is **exactly** the path to **this repo’s** `mcp-server/dist/index.js` (e.g. `/Users/xiaoleishawn/private/AL/mcp-server/dist/index.js`). If it points elsewhere (e.g. a global `npx` or another repo), change it to this repo’s path and restart Cursor.
+2. Ask the agent to call **`health`**. The response includes a `tools` array listing every tool this server exposes. If the client (e.g. Codex) does not show `record_plan`, `file_op`, or `audit_event` in its tool list, use the **alias** tools instead—same parameters, same behavior: **`record_plan_batch`** (for record_plan), **`record_file_op`** (for file_op), **`record_audit_event`** (for audit_event). The server registers both canonical and alias names so that clients that filter by name (e.g. only exposing `record_*` tools) still expose the aliases.
 
 **Making the server available to other agents (e.g. Codex)**  
 MCP config is **per client**. Cursor’s global config under `~/.cursor` only applies to Cursor. Codex, VS Code, Claude Desktop, etc. each use their own config, so you need to add the AL MCP server in each place where you want it.
@@ -53,7 +77,7 @@ For **each new chat** (one “session” of agent work), do this:
 | Step | When | Tool / action |
 |------|------|----------------|
 | **Start** | Beginning of the chat, after the user’s first message | Call **`record_session_start`** with a unique `session_id`, plus `title` and `user_message` (e.g. the user’s first message or a short summary). |
-| **During** | Whenever the agent does something | Call the right **`record_*`** tool with the same `session_id`: `record_plan_step` for plan steps, `record_file_edit` / `record_file_create` / `record_file_delete` for file changes, `record_tool_call` for tool use, `record_deliverable` for deliverables. |
+| **During** | Whenever the agent does something | Call the right **`record_*`** tool with the same `session_id`: `record_plan_step` for plan steps, `record_file_edit` / `record_file_create` / `record_file_delete` (or **`file_op`**) for file changes, **`record_tool_call`** for every host tool use (read_file, grep, run_terminal_cmd, web_search, etc.), `record_deliverable` for deliverables. **If the agent does not call `record_tool_call` and file_op/record_file_*, the session JSON will only contain plan/deliverable and will miss the actual work (searches, reads, commands, file diffs).** Use a project rule or prompt that requires the agent to record every tool call and every file change. |
 | **End** | When the chat/session is done | Call **`record_session_end`** with that `session_id`. This flushes the session to a JSON file in `AL_SESSIONS_DIR`. |
 
 So in one chat you use **one** `session_id` for the whole conversation and call `record_session_start` once, then many `record_*` calls, then `record_session_end` once.
@@ -183,9 +207,9 @@ Host connects via stdio (e.g. Cursor MCP with command `node /path/to/mcp-server/
 - **record_deliverable** — `session_id`; optional `title`, `content`, `at`.
 - **record_tool_call** — `session_id`, `name`; optional `args`, `result`, `at`.
 - **record_session_end** — `session_id`. Marks session complete and flushes to disk.
-- **record_plan** — `session_id`, `steps` (string[]). Batch roadmap; links future actions to step indices (Story view).
-- **file_op** — `session_id`, `path`, `action` (`create` \| `edit` \| `delete`), optional `content`. **Record + execute:** records before/after then writes to disk. Use instead of host file tools for full trace.
-- **audit_event** — `session_id`, `type`, `description`. Non-file events (decisions, milestones).
+- **record_plan** / **record_plan_batch** — `session_id`, `steps` (string[]). Batch roadmap; same params. Use record_plan_batch if record_plan is not visible in your client.
+- **file_op** / **record_file_op** — `session_id`, `path`, `action` (`create` \| `edit` \| `delete`), optional `content`. **Record + execute:** records before/after then writes to disk. Use record_file_op if file_op is not visible.
+- **audit_event** / **record_audit_event** — `session_id`, `type`, `description`. Non-file events (decisions, milestones). Use record_audit_event if audit_event is not visible.
 - **flush_sessions** — No args. Flushes all in-memory completed sessions.
 - **list_sessions** — No args. Lists saved sessions (ids, paths, timestamps).
 

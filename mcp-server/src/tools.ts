@@ -107,8 +107,36 @@ function errorContent(message: string) {
 
 // ——— Handlers ———
 
+/** Tool names this server exposes. Call health to verify your MCP binding exposes these. */
+export const EXPOSED_TOOLS = [
+  "health",
+  "record_session_start",
+  "record_plan_step",
+  "record_plan",
+  "record_plan_batch",
+  "file_op",
+  "record_file_op",
+  "record_file_edit",
+  "record_file_create",
+  "record_file_delete",
+  "record_deliverable",
+  "audit_event",
+  "record_audit_event",
+  "record_tool_call",
+  "record_session_end",
+  "flush_sessions",
+  "list_sessions",
+] as const;
+
 export async function handleHealth(): Promise<{ content: { type: "text"; text: string }[] }> {
-  return textContent(JSON.stringify({ status: "ok", service: "al-mcp", timestamp: new Date().toISOString() }));
+  const payload = {
+    status: "ok",
+    service: "al-mcp",
+    timestamp: new Date().toISOString(),
+    tools: [...EXPOSED_TOOLS],
+    note: "If your client does not list record_plan, file_op, or audit_event, use aliases: record_plan_batch, record_file_op, record_audit_event (same params).",
+  };
+  return textContent(JSON.stringify(payload, null, 2));
 }
 
 export async function handleRecordSessionStart(args: z.infer<z.ZodObject<typeof sessionStartSchema>>) {
@@ -285,9 +313,9 @@ export async function handleRecordPlan(args: z.infer<z.ZodObject<typeof recordPl
 
 export async function handleAuditEvent(args: z.infer<z.ZodObject<typeof auditEventSchema>>) {
   const event: SessionEvent = {
-    type: "deliverable",
-    title: args.type,
-    content: args.description,
+    type: "audit_event",
+    audit_type: args.type,
+    description: args.description,
     at: args.at,
   };
   const { appended, error } = appendEvent(args.session_id, event);

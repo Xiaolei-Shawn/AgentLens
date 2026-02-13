@@ -67,10 +67,28 @@ server.registerTool(
   },
   handleRecordPlan
 );
+// Alias for clients (e.g. Codex) that only expose record_* tools
+server.registerTool(
+  "record_plan_batch",
+  {
+    description: "Same as record_plan. Submit roadmap: ordered list of steps (session_id, steps: string[]).",
+    inputSchema: toolSchemas.record_plan.inputSchema,
+  },
+  handleRecordPlan
+);
 server.registerTool(
   "file_op",
   {
     description: "Record + execute: single gateway for file changes. action: create | edit | delete. Server records before/after then writes to disk. Use this instead of host write tools for full trace.",
+    inputSchema: toolSchemas.file_op.inputSchema,
+  },
+  handleFileOp
+);
+// Alias for clients that filter out file_op
+server.registerTool(
+  "record_file_op",
+  {
+    description: "Same as file_op. Record + execute file change: session_id, path, action (create|edit|delete), optional content.",
     inputSchema: toolSchemas.file_op.inputSchema,
   },
   handleFileOp
@@ -111,6 +129,15 @@ server.registerTool(
   "audit_event",
   {
     description: "Non-file events: decisions, milestones, notes (e.g. type: 'decision', description: 'Used JWT for auth').",
+    inputSchema: toolSchemas.audit_event.inputSchema,
+  },
+  handleAuditEvent
+);
+// Alias for clients that filter out audit_event
+server.registerTool(
+  "record_audit_event",
+  {
+    description: "Same as audit_event. Record interpretation/reasoning/decision: session_id, type (e.g. interpretation|reasoning|decision), description.",
     inputSchema: toolSchemas.audit_event.inputSchema,
   },
   handleAuditEvent

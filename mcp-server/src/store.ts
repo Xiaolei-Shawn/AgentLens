@@ -17,6 +17,7 @@ const eventKey = (e: SessionEvent): string => {
   if (t === "file_edit") return `file_edit:${(e as { path: string }).path}:${(e as { at?: string }).at ?? ""}`;
   if (t === "file_create") return `file_create:${(e as { path: string }).path}:${(e as { at?: string }).at ?? ""}`;
   if (t === "file_delete") return `file_delete:${(e as { path: string }).path}:${(e as { at?: string }).at ?? ""}`;
+  if (t === "audit_event") return `audit_event:${(e as { audit_type: string }).audit_type}:${(e as { at?: string }).at ?? ""}`;
   if (t === "deliverable") return `deliverable:${(e as { at?: string }).at ?? ""}`;
   if (t === "tool_call") return `tool_call:${(e as { name: string }).name}:${(e as { at?: string }).at ?? ""}`;
   return `unknown:${JSON.stringify(e)}`;
