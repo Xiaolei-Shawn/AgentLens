@@ -11,6 +11,10 @@ import {
 } from "./FileEvolutionComposition";
 import { Intro, defaultIntroPropsExport } from "./Intro";
 import { FunReplay, defaultFunReplayProps } from "./FunReplay";
+import {
+  SessionWorkflow,
+  defaultSessionWorkflowProps,
+} from "./SessionWorkflow";
 import { SessionReplaySchema } from "./schema";
 import type { Session } from "./types/session";
 
@@ -24,6 +28,13 @@ function getSessionDuration(session: Session): number {
   return n * 30;
 }
 
+const WORKFLOW_FRAMES_PER_EVENT = 30;
+function getSessionWorkflowDuration(session: Session): number {
+  const n = session.events.length;
+  if (n === 0) return FPS * 5;
+  return n * WORKFLOW_FRAMES_PER_EVENT;
+}
+
 function getFileEvolutionDuration(session: Session, path: string): number {
   const count = getFileRevisionCount(session, path);
   if (count === 0) return FPS * 10;
@@ -34,7 +45,9 @@ function getFileRevisionCount(session: Session, path: string): number {
   let count = 0;
   for (const event of session.events) {
     if (
-      (event.type === "file_create" || event.type === "file_edit" || event.type === "file_delete") &&
+      (event.type === "file_create" ||
+        event.type === "file_edit" ||
+        event.type === "file_delete") &&
       event.path === path
     ) {
       count++;
@@ -59,7 +72,9 @@ export const RemotionRoot: React.FC = () => {
       />
       <Composition
         id="SessionReplay"
-        component={SessionReplay as unknown as React.FC<Record<string, unknown>>}
+        component={
+          SessionReplay as unknown as React.FC<Record<string, unknown>>
+        }
         defaultProps={defaultSessionReplayProps}
         schema={SessionReplaySchema}
         durationInFrames={getSessionDuration(defaultSessionReplayProps.session)}
@@ -85,7 +100,11 @@ export const RemotionRoot: React.FC = () => {
       />
       <Composition
         id="FileEvolution"
-        component={FileEvolutionComposition as unknown as React.FC<Record<string, unknown>>}
+        component={
+          FileEvolutionComposition as unknown as React.FC<
+            Record<string, unknown>
+          >
+        }
         defaultProps={defaultFileEvolutionProps}
         durationInFrames={300}
         fps={FPS}
@@ -94,8 +113,25 @@ export const RemotionRoot: React.FC = () => {
         calculateMetadata={({ props }) => ({
           durationInFrames: getFileEvolutionDuration(
             props.session as Session,
-            props.filePath as string
+            props.filePath as string,
           ),
+        })}
+      />
+      <Composition
+        id="SessionWorkflow"
+        component={
+          SessionWorkflow as unknown as React.FC<Record<string, unknown>>
+        }
+        defaultProps={defaultSessionWorkflowProps}
+        schema={SessionReplaySchema}
+        durationInFrames={getSessionWorkflowDuration(
+          defaultSessionWorkflowProps.session,
+        )}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: getSessionWorkflowDuration(props.session),
         })}
       />
     </>
