@@ -1,6 +1,7 @@
 import { createTwoFilesPatch } from "diff";
 import {
   isPlanStepEvent,
+  isAuditEvent,
   isDeliverableEvent,
   isFileEditEvent,
   isFileCreateEvent,
@@ -16,17 +17,39 @@ interface CurrentEventRendererProps {
   index: number;
 }
 
-function UnifiedDiff({ oldContent, newContent, path }: { oldContent: string; newContent: string; path: string }) {
-  const patch = createTwoFilesPatch(path, path, oldContent || "", newContent || "", "before", "after");
+function UnifiedDiff({
+  oldContent,
+  newContent,
+  path,
+}: {
+  oldContent: string;
+  newContent: string;
+  path: string;
+}) {
+  const patch = createTwoFilesPatch(
+    path,
+    path,
+    oldContent || "",
+    newContent || "",
+    "before",
+    "after",
+  );
   const lines = patch.split("\n").slice(5); // skip header
 
   return (
     <pre className="diff-block">
       {lines.map((line, i) => {
         const className =
-          line.startsWith("+") && !line.startsWith("+++") ? "diff-add" : line.startsWith("-") && !line.startsWith("---") ? "diff-remove" : "";
+          line.startsWith("+") && !line.startsWith("+++")
+            ? "diff-add"
+            : line.startsWith("-") && !line.startsWith("---")
+              ? "diff-remove"
+              : "";
         return (
-          <div key={i} className={className ? `diff-line ${className}` : "diff-line"}>
+          <div
+            key={i}
+            className={className ? `diff-line ${className}` : "diff-line"}
+          >
             {line || " "}
           </div>
         );
@@ -35,7 +58,10 @@ function UnifiedDiff({ oldContent, newContent, path }: { oldContent: string; new
   );
 }
 
-export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps) {
+export function CurrentEventRenderer({
+  event,
+  index,
+}: CurrentEventRendererProps) {
   return (
     <div className="current-event-renderer">
       <header className="event-header">
@@ -46,7 +72,15 @@ export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps
         {isPlanStepEvent(event) && (
           <div className="event-text">
             <h3>{event.step}</h3>
-            {event.index !== undefined && <p className="event-meta">Step index: {event.index}</p>}
+            {event.index !== undefined && (
+              <p className="event-meta">Step index: {event.index}</p>
+            )}
+          </div>
+        )}
+        {isAuditEvent(event) && (
+          <div className="event-text event-audit">
+            <h3 className="audit-type">{event.audit_type}</h3>
+            <p>{event.description}</p>
           </div>
         )}
         {isDeliverableEvent(event) && (
@@ -59,7 +93,11 @@ export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps
           <div className="event-file">
             <p className="event-path">{event.path}</p>
             {event.old_content != null && event.new_content != null ? (
-              <UnifiedDiff oldContent={event.old_content} newContent={event.new_content} path={event.path} />
+              <UnifiedDiff
+                oldContent={event.old_content}
+                newContent={event.new_content}
+                path={event.path}
+              />
             ) : (
               <p className="event-meta">No content captured for diff.</p>
             )}
@@ -89,18 +127,24 @@ export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps
             {event.args != null && (
               <details>
                 <summary>Args</summary>
-                <pre className="code-block">{JSON.stringify(event.args, null, 2)}</pre>
+                <pre className="code-block">
+                  {JSON.stringify(event.args, null, 2)}
+                </pre>
               </details>
             )}
             {event.result != null && (
               <details>
                 <summary>Result</summary>
-                <pre className="code-block">{JSON.stringify(event.result, null, 2)}</pre>
+                <pre className="code-block">
+                  {JSON.stringify(event.result, null, 2)}
+                </pre>
               </details>
             )}
           </div>
         )}
-        {event.type === "session_start" && <p className="event-meta">Session started.</p>}
+        {event.type === "session_start" && (
+          <p className="event-meta">Session started.</p>
+        )}
       </div>
     </div>
   );

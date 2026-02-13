@@ -6,7 +6,7 @@ import {
   isToolCallEvent,
   isDeliverableEvent,
 } from "../types/session";
-import type { Session } from "../types/session";
+import type { Session, FileEditEvent, FileCreateEvent, FileDeleteEvent } from "../types/session";
 import type { Segment } from "../lib/segments";
 
 import "./SegmentDetailView.css";
@@ -15,6 +15,7 @@ interface SegmentDetailViewProps {
   session: Session;
   segment: Segment;
   segmentIndex: number;
+  onOpenFileEvolution?: (path: string, eventIndex: number) => void;
 }
 
 function formatTimestamp(at: string | undefined): string {
@@ -48,7 +49,7 @@ function UnifiedDiff({ oldContent, newContent, path }: { oldContent: string; new
   );
 }
 
-export function SegmentDetailView({ session, segment, segmentIndex }: SegmentDetailViewProps) {
+export function SegmentDetailView({ session, segment, segmentIndex, onOpenFileEvolution }: SegmentDetailViewProps) {
   const events = session.events;
   const actions = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
@@ -56,7 +57,8 @@ export function SegmentDetailView({ session, segment, segmentIndex }: SegmentDet
   const fileChanges = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
     .filter(
-      ({ event }) => isFileEditEvent(event) || isFileCreateEvent(event) || isFileDeleteEvent(event)
+      (item): item is { index: number; event: FileEditEvent | FileCreateEvent | FileDeleteEvent } =>
+        isFileEditEvent(item.event) || isFileCreateEvent(item.event) || isFileDeleteEvent(item.event)
     );
   const results = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
@@ -122,6 +124,15 @@ export function SegmentDetailView({ session, segment, segmentIndex }: SegmentDet
             <ul className="segment-list">
               {fileChanges.map(({ index, event }) => (
                 <li key={index} className="segment-card file-card">
+                  {onOpenFileEvolution && (
+                    <button
+                      type="button"
+                      className="segment-open-evolution-btn"
+                      onClick={() => onOpenFileEvolution(event.path, index)}
+                    >
+                      Open in file evolution
+                    </button>
+                  )}
                   {isFileEditEvent(event) && (
                     <>
                       <p className="file-path">{event.path} <span className="file-op">(edit)</span></p>

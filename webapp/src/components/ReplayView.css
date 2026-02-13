@@ -32,10 +32,45 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.replay-view-toggle {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.replay-view-toggle button {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+}
+
+.replay-view-toggle button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.replay-view-toggle button.active {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #fff;
+}
+
 .replay-layout {
   flex: 1;
   min-height: 0;
   display: flex;
+}
+
+.replay-sidebar {
+  width: 260px;
+  min-width: 220px;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .replay-main {
@@ -43,6 +78,7 @@
   min-width: 0;
   padding: 1rem;
   overflow: auto;
+  view-transition-name: replay-main;
 }
 
 .replay-placeholder {
@@ -74,4 +110,41 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.replay-view--workflow .replay-main {
+  padding: 0;
+}
+
+.replay-title--workflow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.replay-title {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.workflow-logo {
+  color: rgba(59, 130, 246, 0.9);
+  font-size: 1.1em;
+}
+
+.replay-view-toggle--all {
+  flex-wrap: wrap;
+}
+
+.replay-view-toggle--all button {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+/* Smooth crossfade when switching Flow ↔ Node view (View Transitions API) */
+@supports (view-transition-name: none) {
+  ::view-transition-old(replay-main),
+  ::view-transition-new(replay-main) {
+    animation-duration: 0.25s;
+    animation-timing-function: ease-out;
+  }
 }

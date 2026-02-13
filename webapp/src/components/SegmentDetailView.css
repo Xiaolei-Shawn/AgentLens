@@ -107,6 +107,19 @@
   margin-bottom: 0.25rem;
 }
 
+.segment-open-evolution-btn {
+  margin-bottom: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  background: rgba(100, 108, 255, 0.2);
+  border-color: rgba(100, 108, 255, 0.4);
+  color: #aab2ff;
+}
+
+.segment-open-evolution-btn:hover {
+  background: rgba(100, 108, 255, 0.35);
+}
+
 .file-path {
   margin: 0 0 0.5rem 0;
   font-size: 0.9rem;

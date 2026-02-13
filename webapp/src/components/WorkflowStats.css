@@ -1,0 +1,63 @@
+.workflow-stats {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workflow-stats__title {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.workflow-stats__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+}
+
+.workflow-stats__grid dt {
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.workflow-stats__grid dd {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.workflow-stats__logs-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.workflow-stats__logs-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: none;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+
+.workflow-stats__log-line {
+  position: relative;
+  margin-bottom: 0.25rem;
+}
+
+.workflow-stats__log-line::before {
+  content: "•";
+  position: absolute;
+  left: -1rem;
+  color: rgba(255, 255, 255, 0.4);
+}

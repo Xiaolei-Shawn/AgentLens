@@ -1,0 +1,67 @@
+.changed-files-list {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.changed-files-list .panel-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.changed-files-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.changed-files-ul li {
+  margin-bottom: 0.25rem;
+}
+
+.changed-file-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.changed-file-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.changed-file-btn.selected {
+  background: rgba(100, 108, 255, 0.25);
+  color: #fff;
+}
+
+.changed-file-name {
+  font-weight: 500;
+}
+
+.changed-file-path {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.changed-file-btn.selected .changed-file-path {
+  color: rgba(255, 255, 255, 0.75);
+}

@@ -14,11 +14,19 @@ export interface Session {
 export type SessionEvent =
   | SessionStartEvent
   | PlanStepEvent
+  | AuditEvent
   | FileEditEvent
   | FileCreateEvent
   | FileDeleteEvent
   | DeliverableEvent
   | ToolCallEvent;
+
+export interface AuditEvent {
+  type: "audit_event";
+  audit_type: string;
+  description: string;
+  at?: string;
+}
 
 export interface SessionStartEvent {
   type: "session_start";
@@ -71,6 +79,9 @@ export interface ToolCallEvent {
 
 export function isPlanStepEvent(e: SessionEvent): e is PlanStepEvent {
   return e.type === "plan_step";
+}
+export function isAuditEvent(e: SessionEvent): e is AuditEvent {
+  return e.type === "audit_event";
 }
 export function isDeliverableEvent(e: SessionEvent): e is DeliverableEvent {
   return e.type === "deliverable";

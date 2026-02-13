@@ -1,0 +1,411 @@
+/* Node View — rolling wheel: strip of cards + connectors, slides on focus change.
+   Detail boxes compact, smaller ratio vs event carousel.
+*/
+.node-view {
+  --node-primary: #0da6f2;
+  --node-bg: #101c22;
+  --node-bg-panel: rgba(255, 255, 255, 0.04);
+  --node-border: rgba(13, 166, 242, 0.2);
+  --node-text: rgba(255, 255, 255, 0.95);
+  --node-muted: rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 1rem 1.5rem;
+  overflow: auto;
+}
+
+.node-view--empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--node-muted);
+}
+
+/* Carousel wrapper: nav arrows + carousel */
+.node-view__carousel-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 56rem;
+  margin: 0 auto 1.25rem;
+  width: 100%;
+}
+
+.node-view__nav {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--node-border);
+  border-radius: 0.5rem;
+  background: var(--node-bg-panel);
+  color: var(--node-text);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    opacity 0.2s;
+}
+
+.node-view__nav:hover:not(:disabled) {
+  background: rgba(13, 166, 242, 0.15);
+  border-color: var(--node-primary);
+}
+
+.node-view__nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Carousel: overflow hidden, strip slides inside */
+.node-view__carousel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.node-view__strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  transition: transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+}
+
+.node-view__strip-cell {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Connector: clickable, shows time from previous event to next */
+.node-view__connector {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-radius: 0.25rem;
+}
+
+.node-view__connector:hover {
+  background: rgba(13, 166, 242, 0.08);
+}
+
+.node-view__connector-line {
+  display: block;
+  width: 100%;
+  height: 2px;
+  min-height: 2px;
+  background: linear-gradient(
+    to right,
+    rgba(13, 166, 242, 0.4),
+    rgba(13, 166, 242, 0.15)
+  );
+}
+
+.node-view__connector-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--node-muted);
+  white-space: nowrap;
+}
+
+.node-view__connector:hover .node-view__connector-label {
+  color: var(--node-primary);
+}
+
+/* Cards: side 220px, center 340px */
+.node-view__card {
+  flex-shrink: 0;
+  width: 220px;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 0.75rem;
+  border: 2px solid var(--node-border);
+  background: var(--node-bg-panel);
+  color: var(--node-text);
+  cursor: pointer;
+  padding: 1rem;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.node-view__card:hover {
+  border-color: rgba(13, 166, 242, 0.5);
+}
+
+.node-view__card--center {
+  width: 340px;
+  min-height: 220px;
+  padding: 1.25rem 1.5rem;
+  border-color: var(--node-primary);
+  background: var(--node-bg);
+  box-shadow: 0 0 20px rgba(13, 166, 242, 0.12);
+  cursor: default;
+}
+
+.node-view__card--center:hover {
+  border-color: var(--node-primary);
+}
+
+/* Side cards: slightly faded when not hovered */
+.node-view__card--completed,
+.node-view__card--pending {
+  opacity: 0.85;
+}
+
+.node-view__card--completed:hover,
+.node-view__card--pending:hover {
+  opacity: 1;
+}
+
+.node-view__card--center {
+  position: relative;
+}
+
+/* Icon */
+.node-view__card-icon {
+  width: 36px;
+  height: 36px;
+  margin: 0.35rem 0;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.node-view__card--center .node-view__card-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0.35rem 0 0.5rem;
+  background: rgba(13, 166, 242, 0.15);
+}
+
+.node-view__card-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--node-text);
+  line-height: 1.25;
+}
+
+.node-view__card--center .node-view__card-title {
+  font-size: 1.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.node-view__card--completed .node-view__card-title,
+.node-view__card--pending .node-view__card-title {
+  color: var(--node-muted);
+}
+
+.node-view__card-desc {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--node-muted);
+  line-height: 1.3;
+  max-width: 100%;
+}
+
+.node-view__progress-wrap {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.35rem;
+}
+
+.node-view__progress-bar {
+  height: 100%;
+  background: var(--node-primary);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+/* Compact detail: single row, smaller — event carousel is the hero */
+.node-view__detail {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr 1.2fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.node-view__panel {
+  background: var(--node-bg-panel);
+  border: 1px solid var(--node-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  overflow: auto;
+}
+
+.node-view__panel-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--node-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.node-view__meta-list,
+.node-view__config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.node-view__meta-row,
+.node-view__config-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.node-view__meta-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--node-muted);
+  text-transform: uppercase;
+}
+
+.node-view__meta-value {
+  font-size: 0.7rem;
+  color: var(--node-text);
+  word-break: break-all;
+}
+
+.node-view__meta-value--mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.65rem;
+}
+
+.node-view__logs-box {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(13, 166, 242, 0.06);
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.6rem;
+  line-height: 1.5;
+  height: 4rem;
+  overflow-y: auto;
+}
+
+.node-view__log-line {
+  color: var(--node-muted);
+  margin-bottom: 0.15rem;
+}
+
+.node-view__log--current {
+  color: var(--node-primary);
+}
+
+/* Event detail: compact, not dominant */
+.node-view__expand {
+  flex: 1;
+  min-height: 100px;
+  max-height: 220px;
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--node-bg-panel);
+  border: 1px solid var(--node-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.node-view__expand .node-view__panel-title {
+  padding: 0.4rem 0.75rem 0;
+  margin-bottom: 0.25rem;
+}
+
+.node-view__expand-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 0.75rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.node-view__expand-body .current-event-renderer {
+  margin: 0;
+}
+
+.node-view__expand-body .event-header {
+  padding: 0.25rem 0;
+  margin-bottom: 0.35rem;
+}
+
+.node-view__expand-body .event-type,
+.node-view__expand-body .event-index {
+  font-size: 0.7rem;
+}
+
+/* Bottom panel: Open in Flow View button */
+.node-view__actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.node-view__open-flow-btn {
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(13, 166, 242, 0.35);
+  background: rgba(13, 166, 242, 0.12);
+  color: var(--node-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.node-view__open-flow-btn:hover {
+  background: rgba(13, 166, 242, 0.2);
+  border-color: var(--node-primary);
+}
+
+/* Responsive */
+@media (max-width: 1023px) {
+  .node-view__carousel {
+    max-width: 100%;
+  }
+
+  .node-view__card {
+    width: 200px;
+    min-height: 140px;
+  }
+
+  .node-view__card--center {
+    width: 300px;
+    min-height: 200px;
+  }
+}

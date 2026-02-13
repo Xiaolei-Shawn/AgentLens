@@ -1,9 +1,6 @@
 .plan-nodes-panel {
-  width: 260px;
-  min-width: 220px;
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
   padding: 0.75rem;
-  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .plan-nodes-panel .panel-title {
