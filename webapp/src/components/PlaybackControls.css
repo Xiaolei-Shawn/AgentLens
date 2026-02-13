@@ -18,7 +18,7 @@
 
 .speed-label {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.5);
   margin-right: 0.25rem;
 }
 
@@ -29,8 +29,8 @@
 }
 
 .speed-btn.active {
-  background: rgba(100, 108, 255, 0.4);
-  border-color: #646cff;
+  background: rgba(13, 166, 242, 0.25);
+  border-color: #0da6f2;
 }
 
 .playback-btn:disabled,

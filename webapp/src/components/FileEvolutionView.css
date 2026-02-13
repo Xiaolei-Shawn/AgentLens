@@ -8,7 +8,7 @@
 .evolution-header {
   flex-shrink: 0;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(13, 166, 242, 0.2);
   margin-bottom: 1rem;
 }
 
@@ -16,7 +16,7 @@
   margin: 0 0 0.5rem 0;
   font-size: 1rem;
   font-family: ui-monospace, monospace;
-  color: #646cff;
+  color: #0da6f2;
   word-break: break-all;
 }
 

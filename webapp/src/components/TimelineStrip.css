@@ -1,27 +1,36 @@
+/* Aligned with Node/Flow view: same primary, panel and text colors */
 .timeline-strip {
+  --timeline-primary: #0da6f2;
+  --timeline-bg: rgba(0, 0, 0, 0.35);
+  --timeline-border: rgba(255, 255, 255, 0.08);
+  --timeline-text: rgba(255, 255, 255, 0.95);
+  --timeline-muted: rgba(255, 255, 255, 0.5);
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--timeline-bg);
+  border: 1px solid var(--timeline-border);
   border-radius: 8px;
+  color: var(--timeline-text);
 }
 
 .timeline-label {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--timeline-muted);
   min-width: 6ch;
+  font-weight: 500;
 }
 
 .timeline-scrubber {
   flex: 1;
   min-width: 0;
   height: 8px;
-  accent-color: #646cff;
+  accent-color: var(--timeline-primary);
   cursor: pointer;
 }
 
 .timeline-scrubber:focus-visible {
-  outline: 2px solid #646cff;
+  outline: 2px solid var(--timeline-primary);
   outline-offset: 2px;
 }

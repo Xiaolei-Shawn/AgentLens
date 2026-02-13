@@ -35,28 +35,28 @@
   width: 100%;
   text-align: left;
   padding: 0.6rem 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(13, 166, 242, 0.2);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .plan-node-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(13, 166, 242, 0.08);
+  border-color: rgba(13, 166, 242, 0.4);
 }
 
 .plan-node-btn.selected {
-  background: rgba(100, 108, 255, 0.25);
-  border-color: rgba(100, 108, 255, 0.5);
+  background: rgba(13, 166, 242, 0.25);
+  border-color: rgba(13, 166, 242, 0.5);
   color: #fff;
 }
 
 .plan-node-btn:focus-visible {
-  outline: 2px solid #646cff;
+  outline: 2px solid #0da6f2;
   outline-offset: 2px;
 }
 

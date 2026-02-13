@@ -13,6 +13,7 @@ import { CurrentEventRenderer } from "./CurrentEventRenderer";
 import "./NodeView.css";
 
 const CONNECTOR_WIDTH = 48;
+const BAR_WINDOW_SIZE = 20;
 /** Match CSS breakpoint (NodeView.css @media (max-width: 1023px)) */
 const MOBILE_BREAKPOINT = 1023;
 function getCardWidths(): { side: number; center: number } {
@@ -36,6 +37,7 @@ function NodeCard({
   state,
   isCenter,
   onSelect,
+  onSeek,
 }: {
   event: SessionEvent;
   index: number;
@@ -43,6 +45,7 @@ function NodeCard({
   state: "completed" | "running" | "pending";
   isCenter: boolean;
   onSelect: () => void;
+  onSeek?: (index: number) => void;
 }) {
   const label = getEventShortLabel(event);
   const kind = getNodeKind(event, index, lastIndex);
@@ -51,6 +54,19 @@ function NodeCard({
       ? (event.step as string).slice(0, 60) +
         ((event.step as string).length > 60 ? "…" : "")
       : null;
+  const total = lastIndex + 1;
+  const windowSize = Math.min(BAR_WINDOW_SIZE, total);
+  const windowStart =
+    total <= BAR_WINDOW_SIZE
+      ? 0
+      : Math.max(
+          0,
+          Math.min(index - Math.floor(windowSize / 2), total - windowSize),
+        );
+  const displayIndices = Array.from(
+    { length: windowSize },
+    (_, i) => windowStart + i,
+  );
 
   return (
     <button
@@ -79,13 +95,44 @@ function NodeCard({
         <p className="node-view__card-desc">{description}</p>
       )}
       {isCenter && (
-        <div className="node-view__progress-wrap">
+        <div className="node-view__progress-block">
+          <span className="node-view__progress-label" aria-hidden>
+            {index + 1} / {total}
+            {total > BAR_WINDOW_SIZE && (
+              <span className="node-view__progress-window-hint">
+                {" "}
+                ({windowStart + 1}–{windowStart + windowSize})
+              </span>
+            )}
+          </span>
           <div
-            className="node-view__progress-bar"
-            style={{
-              width: `${lastIndex <= 0 ? 100 : (index / lastIndex) * 100}%`,
-            }}
-          />
+            className="node-view__progress-wrap"
+            role="presentation"
+            aria-hidden
+          >
+            {displayIndices.map((segIndex) => (
+              <span
+                key={segIndex}
+                role="button"
+                tabIndex={0}
+                className={`node-view__progress-seg ${segIndex === index ? "node-view__progress-seg--current" : ""}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSeek?.(segIndex);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSeek?.(segIndex);
+                  }
+                }}
+                title={`Go to event ${segIndex + 1}`}
+                aria-label={`Go to event ${segIndex + 1} of ${total}`}
+              />
+            ))}
+          </div>
         </div>
       )}
     </button>
@@ -190,7 +237,12 @@ function LogsPanel({
   );
 }
 
-export function NodeView({ session, currentIndex, onSeek, onOpenInFlowView }: NodeViewProps) {
+export function NodeView({
+  session,
+  currentIndex,
+  onSeek,
+  onOpenInFlowView,
+}: NodeViewProps) {
   const events = session.events;
   const lastIndex = events.length - 1;
   const current = events[currentIndex];
@@ -306,6 +358,7 @@ export function NodeView({ session, currentIndex, onSeek, onOpenInFlowView }: No
                       state={state}
                       isCenter={isCenter}
                       onSelect={() => onSeek(i)}
+                      onSeek={onSeek}
                     />
                     {i < events.length - 1 && (
                       <ConnectorSegment

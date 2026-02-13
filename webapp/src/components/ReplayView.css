@@ -8,7 +8,7 @@
 .replay-header {
   flex-shrink: 0;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -32,6 +32,10 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.replay-view-toggle button {
+  transition: background 0.2s, border-color 0.2s;
+}
+
 .replay-view-toggle {
   display: flex;
   gap: 0.25rem;
@@ -41,10 +45,10 @@
 .replay-view-toggle button {
   padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(13, 166, 242, 0.2);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.95);
   cursor: pointer;
 }
 
@@ -53,8 +57,8 @@
 }
 
 .replay-view-toggle button.active {
-  background: rgba(59, 130, 246, 0.35);
-  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(13, 166, 242, 0.35);
+  border-color: rgba(13, 166, 242, 0.6);
   color: #fff;
 }
 
@@ -67,7 +71,7 @@
 .replay-sidebar {
   width: 260px;
   min-width: 220px;
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  border-right: 1px solid rgba(13, 166, 242, 0.2);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -83,7 +87,7 @@
 
 .replay-placeholder {
   padding: 2rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .replay-placeholder p {
@@ -99,14 +103,15 @@
 .replay-placeholder-note code {
   font-size: 0.85em;
   padding: 0.1em 0.3em;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(13, 166, 242, 0.2);
   border-radius: 4px;
 }
 
 .replay-footer {
   flex-shrink: 0;
   padding: 0.75rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -127,7 +132,7 @@
 }
 
 .workflow-logo {
-  color: rgba(59, 130, 246, 0.9);
+  color: #0da6f2;
   font-size: 1.1em;
 }
 

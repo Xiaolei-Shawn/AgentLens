@@ -299,20 +299,60 @@
   word-break: break-word;
 }
 
-.node-view__progress-wrap {
+/* Bar line: index label (e.g. 3/20) + one bar per event, current highlighted; bars are clickable */
+.node-view__progress-block {
   width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 9999px;
-  overflow: hidden;
   margin-top: 0.35rem;
 }
 
-.node-view__progress-bar {
-  height: 100%;
+.node-view__progress-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--node-muted);
+  margin-bottom: 0.25rem;
+}
+
+.node-view__progress-window-hint {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.node-view__progress-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  height: 6px;
+}
+
+.node-view__progress-seg {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.node-view__progress-seg:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.node-view__progress-seg--current {
   background: var(--node-primary);
-  border-radius: 9999px;
-  transition: width 0.3s ease;
+}
+
+.node-view__progress-seg--current:hover {
+  background: var(--node-primary);
+  filter: brightness(1.15);
+}
+
+.node-view__progress-seg:focus-visible {
+  outline: 2px solid var(--node-primary);
+  outline-offset: 1px;
+  z-index: 1;
 }
 
 /* Compact detail: single row, smaller — event carousel is the hero */
