@@ -1,4 +1,5 @@
 import { getSegments } from "../lib/segments";
+import { getSegmentTitle } from "../lib/segments";
 import type { Session } from "../types/session";
 import type { Segment } from "../lib/segments";
 
@@ -26,15 +27,15 @@ export function PlanNodesPanel({ session, selectedSegmentIndex, onSelectSegment 
   if (segments.length === 0) {
     return (
       <aside className="plan-nodes-panel">
-        <h2 className="panel-title">Plan steps</h2>
-        <p className="panel-empty">No plan steps in this session.</p>
+        <h2 className="panel-title">Intents</h2>
+        <p className="panel-empty">No intent segments in this session.</p>
       </aside>
     );
   }
 
   return (
     <aside className="plan-nodes-panel">
-      <h2 className="panel-title">Plan steps</h2>
+      <h2 className="panel-title">Intents</h2>
       <ul className="plan-nodes-list" role="list">
         {segments.map((seg, i) => (
           <PlanNode
@@ -61,8 +62,10 @@ function PlanNode({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const time = formatTime(segment.planStep.at);
+  const time = formatTime(segment.planStep.ts);
   const eventCount = segment.eventIndices.length;
+  const title = getSegmentTitle(segment, index);
+  const intentId = segment.planStep.scope?.intent_id ?? "fallback";
 
   return (
     <li>
@@ -72,9 +75,9 @@ function PlanNode({
         onClick={onClick}
         aria-pressed={isSelected}
         aria-expanded={isSelected}
-        title={`Step ${segment.planStep.index ?? index + 1} · ${time}`}
+        title={`Intent ${intentId} · ${time}`}
       >
-        <span className="plan-node-label">{segment.planStep.step}</span>
+        <span className="plan-node-label">{title}</span>
         <span className="plan-node-meta">
           {time} · {eventCount} event{eventCount !== 1 ? "s" : ""}
         </span>

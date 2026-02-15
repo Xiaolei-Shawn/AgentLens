@@ -57,22 +57,6 @@ function animatePanZoom(
   return () => cancelAnimationFrame(rafId);
 }
 
-function formatSessionRuntime(events: Session["events"]): string {
-  if (events.length < 2) return "—";
-  const first =
-    "at" in events[0] && events[0].at ? new Date(events[0].at).getTime() : 0;
-  const last =
-    "at" in events[events.length - 1] &&
-    (events[events.length - 1] as { at?: string }).at
-      ? new Date((events[events.length - 1] as { at: string }).at).getTime()
-      : 0;
-  if (last <= first) return "—";
-  const sec = (last - first) / 1000;
-  const m = Math.floor(sec / 60);
-  const s = (sec % 60).toFixed(1);
-  return m > 0 ? `${m}:${s.padStart(4, "0")}s` : `${s}s`;
-}
-
 interface FlowViewProps {
   session: Session;
   currentIndex: number;
@@ -88,12 +72,10 @@ interface FlowViewProps {
 
 const PAD = 48;
 const MIN_SLOT_WIDTH = 130;
-const NODE_R = 20;
 const NODE_BOX_WIDTH = 44;
 const NODE_BOX_HEIGHT = 36;
 const NODE_BOX_RX = 8;
 const LABEL_FONT_SIZE = 12;
-const LABEL_LINE_HEIGHT = 16;
 
 type GridLayout = {
   width: number;
@@ -361,7 +343,6 @@ export function FlowView({
 
   const { positions, rowHeight } = layout;
   const rowScale = Math.min(1, (rowHeight - 8) / 72);
-  const nodeR = NODE_R * rowScale;
   const nodeBoxW = NODE_BOX_WIDTH * rowScale;
   const nodeBoxH = NODE_BOX_HEIGHT * rowScale;
   const nodeBoxRx = NODE_BOX_RX * rowScale;
@@ -369,7 +350,6 @@ export function FlowView({
   const halfH = nodeBoxH / 2;
   const labelY = nodeBoxH / 2 + 14;
   const labelFontSize = Math.round(LABEL_FONT_SIZE * rowScale);
-  const labelDy = LABEL_LINE_HEIGHT * rowScale;
 
   const CONNECTOR_INSET = 2;
 
@@ -603,9 +583,9 @@ export function FlowView({
                   const [cx, cy] = positions[i];
                   const kind = getNodeKind(event, i, lastIndex);
                   const label =
-                    event.type.length > 16
-                      ? event.type.slice(0, 14) + "…"
-                      : event.type;
+                    event.kind.length > 16
+                      ? event.kind.slice(0, 14) + "…"
+                      : event.kind;
                   const isCompleted = i < currentIndex;
                   const isCurrent = i === currentIndex;
                   const keyMoment = isKeyMoment(event, i, lastIndex);

@@ -13,6 +13,7 @@
   border: 1px solid var(--timeline-border);
   border-radius: 8px;
   color: var(--timeline-text);
+  position: relative;
 }
 
 .timeline-label {
@@ -33,4 +34,33 @@
 .timeline-scrubber:focus-visible {
   outline: 2px solid var(--timeline-primary);
   outline-offset: 2px;
+}
+
+.timeline-critical-track {
+  position: absolute;
+  left: 8.7rem;
+  right: 1rem;
+  bottom: 0.35rem;
+  height: 0.55rem;
+  pointer-events: none;
+}
+
+.timeline-critical-dot {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: #ef4444;
+  box-shadow: 0 0 0.35rem rgba(239, 68, 68, 0.65);
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 0;
+}
+
+.timeline-critical-dot.is-current {
+  background: #f59e0b;
+  box-shadow: 0 0 0.35rem rgba(245, 158, 11, 0.8);
 }

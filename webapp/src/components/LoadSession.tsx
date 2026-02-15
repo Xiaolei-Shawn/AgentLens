@@ -36,8 +36,8 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
     (e: React.DragEvent) => {
       e.preventDefault();
       const file = e.dataTransfer.files[0];
-      if (file?.name.endsWith(".json")) handleFile(file);
-      else onError("Please drop a JSON file.");
+      if (file && (file.name.endsWith(".json") || file.name.endsWith(".jsonl"))) handleFile(file);
+      else onError("Please drop a .json or .jsonl file.");
     },
     [handleFile, onError]
   );
@@ -60,7 +60,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
       <input
         ref={inputRef}
         type="file"
-        accept=".json,application/json"
+        accept=".json,.jsonl,application/json"
         onChange={onInputChange}
         className="file-input"
         aria-label="Choose session JSON"

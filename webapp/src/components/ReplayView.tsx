@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { flushSync } from "react-dom";
 import type { Session } from "../types/session";
 import { getSegments } from "../lib/segments";
 import { getRevisionIndexForEvent } from "../lib/fileEvolution";
+import { runAuditPostProcessing } from "../lib/auditPipeline";
 import { PlanNodesPanel } from "./PlanNodesPanel";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { SegmentDetailView } from "./SegmentDetailView";
@@ -11,6 +12,7 @@ import { TimelineStrip } from "./TimelineStrip";
 import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { NodeView } from "./NodeView";
+import { ReviewerHighlights } from "./ReviewerHighlights";
 
 import "./ReplayView.css";
 
@@ -23,6 +25,38 @@ interface ReplayViewProps {
 
 export function ReplayView({ session, onBack }: ReplayViewProps) {
   const segments = getSegments(session);
+  const { normalized, reviewer } = useMemo(
+    () => runAuditPostProcessing(session.events),
+    [session.events]
+  );
+
+  const criticalIndices = useMemo(() => {
+    const out = new Set<number>();
+    for (let i = 0; i < session.events.length; i++) {
+      const e = session.events[i];
+      if (e.kind === "decision" || e.kind === "session_end") out.add(i);
+      if (e.kind === "assumption" && e.payload.risk === "high") out.add(i);
+      if (e.kind === "verification") {
+        const r = e.payload.result;
+        if (r === "fail" || r === "unknown") out.add(i);
+      }
+      if (e.kind === "file_op") {
+        const target =
+          (typeof e.payload.target === "string" ? e.payload.target : "") ||
+          (typeof e.scope?.file === "string" ? e.scope.file : "");
+        const lower = target.toLowerCase();
+        if (
+          lower.includes("/api/") ||
+          lower.includes("/routes/") ||
+          lower.includes("/migrations/") ||
+          lower.endsWith("package.json")
+        ) {
+          out.add(i);
+        }
+      }
+    }
+    return [...out].sort((a, b) => a - b);
+  }, [session.events]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<
     number | null
@@ -37,11 +71,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   >(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
-  const [workflowSpeed, setWorkflowSpeed] = useState(1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWorkflowView = viewMode === "pivot";
-  const playbackSpeed = isWorkflowView ? workflowSpeed : speed;
+  const playbackSpeed = speed;
 
   const eventCount = session.events.length;
   const atEnd = eventCount === 0 || currentIndex >= eventCount - 1;
@@ -132,8 +165,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       ? segments[selectedSegmentIndex]
       : null;
 
-  const currentEvent = eventCount > 0 ? session.events[currentIndex] : null;
-
   const withViewTransition = useCallback((fn: () => void) => {
     const doc = typeof document !== "undefined" ? document : null;
     if (doc && "startViewTransition" in doc) {
@@ -209,6 +240,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </aside>
         )}
         <main className="replay-main">
+          <ReviewerHighlights normalized={normalized} reviewer={reviewer} />
           {viewMode === "pivot" && pivotSubView === "flow" && (
             <FlowView
               session={session}
@@ -258,8 +290,8 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   <p>Select a plan step or a changed file on the left.</p>
                   {segments.length === 0 && (
                     <p className="replay-placeholder-note">
-                      This session has no plan steps. Load a session that uses{" "}
-                      <code>record_plan</code> or <code>record_plan_step</code>.
+                      This session has no explicit intent boundaries. The UI can still
+                      render lifecycle using fallback grouping.
                     </p>
                   )}
                 </div>
@@ -275,6 +307,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               eventCount={eventCount}
               currentIndex={currentIndex}
               onSeek={handleSeek}
+              criticalIndices={criticalIndices}
             />
             <PlaybackControls
               isPlaying={isPlaying}

@@ -1,100 +1,53 @@
-/**
- * Session types aligned with @al/schema (canonical contract).
- * Duplicated here so webapp runs without building the schema package.
- */
+import type { CanonicalEvent } from "@al/schema/event-envelope";
 
 export interface Session {
   id: string;
-  started_at: string;
+  started_at?: string;
   title: string;
   user_message: string;
+  goal?: string;
+  outcome?: "completed" | "partial" | "failed" | "aborted" | "unknown";
   events: SessionEvent[];
 }
 
-export type SessionEvent =
-  | SessionStartEvent
-  | PlanStepEvent
-  | AuditEvent
-  | FileEditEvent
-  | FileCreateEvent
-  | FileDeleteEvent
-  | DeliverableEvent
-  | ToolCallEvent;
+export type SessionEvent = CanonicalEvent;
 
-export interface AuditEvent {
-  type: "audit_event";
-  audit_type: string;
-  description: string;
-  at?: string;
+export function isIntentEvent(e: SessionEvent): boolean {
+  return e.kind === "intent";
 }
 
-export interface SessionStartEvent {
-  type: "session_start";
-  at?: string;
+export function isFileOpEvent(e: SessionEvent): boolean {
+  return e.kind === "file_op";
 }
 
-export interface PlanStepEvent {
-  type: "plan_step";
-  step: string;
-  index?: number;
-  at?: string;
+export function isToolCallEvent(e: SessionEvent): boolean {
+  return e.kind === "tool_call";
 }
 
-export interface FileEditEvent {
-  type: "file_edit";
-  path: string;
-  old_content?: string;
-  new_content?: string;
-  at?: string;
+export function isDecisionEvent(e: SessionEvent): boolean {
+  return e.kind === "decision";
 }
 
-export interface FileCreateEvent {
-  type: "file_create";
-  path: string;
-  content?: string;
-  at?: string;
+export function isAssumptionEvent(e: SessionEvent): boolean {
+  return e.kind === "assumption";
 }
 
-export interface FileDeleteEvent {
-  type: "file_delete";
-  path: string;
-  old_content?: string;
-  at?: string;
+export function isVerificationEvent(e: SessionEvent): boolean {
+  return e.kind === "verification";
 }
 
-export interface DeliverableEvent {
-  type: "deliverable";
-  title?: string;
-  content?: string;
-  at?: string;
+export function getEventTimestamp(e: SessionEvent): string | undefined {
+  return e.ts;
 }
 
-export interface ToolCallEvent {
-  type: "tool_call";
-  name: string;
-  args?: unknown;
-  result?: unknown;
-  at?: string;
+export function getPayloadString(e: SessionEvent, key: string): string | undefined {
+  const value = e.payload?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-export function isPlanStepEvent(e: SessionEvent): e is PlanStepEvent {
-  return e.type === "plan_step";
-}
-export function isAuditEvent(e: SessionEvent): e is AuditEvent {
-  return e.type === "audit_event";
-}
-export function isDeliverableEvent(e: SessionEvent): e is DeliverableEvent {
-  return e.type === "deliverable";
-}
-export function isFileEditEvent(e: SessionEvent): e is FileEditEvent {
-  return e.type === "file_edit";
-}
-export function isFileCreateEvent(e: SessionEvent): e is FileCreateEvent {
-  return e.type === "file_create";
-}
-export function isFileDeleteEvent(e: SessionEvent): e is FileDeleteEvent {
-  return e.type === "file_delete";
-}
-export function isToolCallEvent(e: SessionEvent): e is ToolCallEvent {
-  return e.type === "tool_call";
+export function getFilePathFromFileOp(e: SessionEvent): string | undefined {
+  if (!isFileOpEvent(e)) return undefined;
+  const target = getPayloadString(e, "target");
+  if (target) return target;
+  return e.scope?.file;
 }

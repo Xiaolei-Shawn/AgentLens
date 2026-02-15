@@ -1,13 +1,16 @@
 import { createTwoFilesPatch } from "diff";
+import type { Session } from "../types/session";
 import {
-  isFileEditEvent,
-  isFileCreateEvent,
-  isFileDeleteEvent,
+  getFilePathFromFileOp,
+  getPayloadString,
+  isAssumptionEvent,
+  isDecisionEvent,
+  isFileOpEvent,
   isToolCallEvent,
-  isDeliverableEvent,
+  isVerificationEvent,
 } from "../types/session";
-import type { Session, FileEditEvent, FileCreateEvent, FileDeleteEvent } from "../types/session";
 import type { Segment } from "../lib/segments";
+import { getSegmentTitle } from "../lib/segments";
 
 import "./SegmentDetailView.css";
 
@@ -22,10 +25,7 @@ function formatTimestamp(at: string | undefined): string {
   if (!at) return "—";
   try {
     const d = new Date(at);
-    return d.toLocaleString(undefined, {
-      dateStyle: "short",
-      timeStyle: "medium",
-    });
+    return d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" });
   } catch {
     return at;
   }
@@ -49,32 +49,46 @@ function UnifiedDiff({ oldContent, newContent, path }: { oldContent: string; new
   );
 }
 
+function readDetailsObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function readOldNew(event: Session["events"][number]): { oldContent?: string; newContent?: string } {
+  const details = readDetailsObject(event.payload.details);
+  const oldContent =
+    (typeof details.old_content === "string" ? details.old_content : undefined) ??
+    (typeof event.payload.old_content === "string" ? event.payload.old_content : undefined);
+  const newContent =
+    (typeof details.new_content === "string" ? details.new_content : undefined) ??
+    (typeof event.payload.new_content === "string" ? event.payload.new_content : undefined) ??
+    (typeof event.payload.content === "string" ? event.payload.content : undefined);
+  return { oldContent, newContent };
+}
+
 export function SegmentDetailView({ session, segment, segmentIndex, onOpenFileEvolution }: SegmentDetailViewProps) {
   const events = session.events;
-  const actions = segment.eventIndices
+  const actionEvents = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
     .filter(({ event }) => isToolCallEvent(event));
   const fileChanges = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
-    .filter(
-      (item): item is { index: number; event: FileEditEvent | FileCreateEvent | FileDeleteEvent } =>
-        isFileEditEvent(item.event) || isFileCreateEvent(item.event) || isFileDeleteEvent(item.event)
-    );
-  const results = segment.eventIndices
+    .filter(({ event }) => isFileOpEvent(event));
+  const reasoning = segment.eventIndices
     .map((i) => ({ index: i, event: events[i] }))
-    .filter(({ event }) => isDeliverableEvent(event));
+    .filter(({ event }) => isDecisionEvent(event) || isAssumptionEvent(event) || isVerificationEvent(event));
 
-  const stepIndex = segment.planStep.index ?? segmentIndex;
-  const timestamp = formatTimestamp(segment.planStep.at);
+  const title = getSegmentTitle(segment, segmentIndex);
+  const timestamp = formatTimestamp(segment.planStep.ts);
+  const intentId = segment.planStep.scope?.intent_id ?? getPayloadString(segment.planStep, "intent_id") ?? "fallback";
 
   return (
     <div className="segment-detail-view">
       <header className="segment-detail-header">
-        <h2 className="segment-detail-title">{segment.planStep.step}</h2>
+        <h2 className="segment-detail-title">{title}</h2>
         <dl className="segment-detail-meta">
           <div>
-            <dt>Index</dt>
-            <dd>{stepIndex}</dd>
+            <dt>Intent</dt>
+            <dd>{intentId}</dd>
           </div>
           <div>
             <dt>Time</dt>
@@ -84,36 +98,23 @@ export function SegmentDetailView({ session, segment, segmentIndex, onOpenFileEv
       </header>
 
       <div className="segment-detail-sections">
-        {actions.length > 0 && (
+        {actionEvents.length > 0 && (
           <section className="segment-section">
-            <h3 className="segment-section-title">Actions</h3>
+            <h3 className="segment-section-title">Activities</h3>
             <ul className="segment-list">
-              {actions.map(({ index, event }) =>
-                isToolCallEvent(event) ? (
-                  <li key={index} className="segment-card">
-                    <details className="action-details">
-                      <summary>
-                        <span className="action-name">{event.name}</span>
-                        <span className="event-index-badge">Event {index + 1}</span>
-                      </summary>
-                      <div className="action-body">
-                        {event.args != null && (
-                          <div>
-                            <strong>Args</strong>
-                            <pre className="segment-code">{JSON.stringify(event.args, null, 2)}</pre>
-                          </div>
-                        )}
-                        {event.result != null && (
-                          <div>
-                            <strong>Result</strong>
-                            <pre className="segment-code">{JSON.stringify(event.result, null, 2)}</pre>
-                          </div>
-                        )}
-                      </div>
-                    </details>
-                  </li>
-                ) : null
-              )}
+              {actionEvents.map(({ index, event }) => (
+                <li key={index} className="segment-card">
+                  <details className="action-details">
+                    <summary>
+                      <span className="action-name">{getPayloadString(event, "action") ?? "tool_call"}</span>
+                      <span className="event-index-badge">Event {index + 1}</span>
+                    </summary>
+                    <div className="action-body">
+                      <pre className="segment-code">{JSON.stringify(event.payload, null, 2)}</pre>
+                    </div>
+                  </details>
+                </li>
+              ))}
             </ul>
           </section>
         )}
@@ -122,71 +123,59 @@ export function SegmentDetailView({ session, segment, segmentIndex, onOpenFileEv
           <section className="segment-section">
             <h3 className="segment-section-title">File changes</h3>
             <ul className="segment-list">
-              {fileChanges.map(({ index, event }) => (
-                <li key={index} className="segment-card file-card">
-                  {onOpenFileEvolution && (
-                    <button
-                      type="button"
-                      className="segment-open-evolution-btn"
-                      onClick={() => onOpenFileEvolution(event.path, index)}
-                    >
-                      Open in file evolution
-                    </button>
-                  )}
-                  {isFileEditEvent(event) && (
-                    <>
-                      <p className="file-path">{event.path} <span className="file-op">(edit)</span></p>
-                      {event.old_content != null && event.new_content != null ? (
-                        <UnifiedDiff oldContent={event.old_content} newContent={event.new_content} path={event.path} />
-                      ) : (
-                        <p className="segment-meta">No content captured for diff.</p>
-                      )}
-                    </>
-                  )}
-                  {isFileCreateEvent(event) && (
-                    <>
-                      <p className="file-path">{event.path} <span className="file-op">(create)</span></p>
-                      {event.content != null ? (
-                        <pre className="segment-code">{event.content}</pre>
-                      ) : (
-                        <p className="segment-meta">No content captured.</p>
-                      )}
-                    </>
-                  )}
-                  {isFileDeleteEvent(event) && (
-                    <>
-                      <p className="file-path">{event.path} <span className="file-op">(delete)</span></p>
-                      {event.old_content != null && (
-                        <pre className="segment-code">{event.old_content}</pre>
-                      )}
-                    </>
-                  )}
+              {fileChanges.map(({ index, event }) => {
+                const path = getFilePathFromFileOp(event) ?? "(unknown path)";
+                const action = getPayloadString(event, "action") ?? "edit";
+                const { oldContent, newContent } = readOldNew(event);
+                return (
+                  <li key={index} className="segment-card file-card">
+                    {onOpenFileEvolution && (
+                      <button
+                        type="button"
+                        className="segment-open-evolution-btn"
+                        onClick={() => onOpenFileEvolution(path, index)}
+                      >
+                        Open in file evolution
+                      </button>
+                    )}
+                    <p className="file-path">
+                      {path} <span className="file-op">({action})</span>
+                    </p>
+                    {action === "edit" && oldContent != null && newContent != null && (
+                      <UnifiedDiff oldContent={oldContent} newContent={newContent} path={path} />
+                    )}
+                    {action === "create" && newContent != null && <pre className="segment-code">{newContent}</pre>}
+                    {action === "delete" && oldContent != null && <pre className="segment-code">{oldContent}</pre>}
+                    {((action === "edit" && (oldContent == null || newContent == null)) ||
+                      ((action === "create" || action === "delete") && oldContent == null && newContent == null)) && (
+                      <p className="segment-meta">No content captured for this change.</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {reasoning.length > 0 && (
+          <section className="segment-section">
+            <h3 className="segment-section-title">Reasoning & checks</h3>
+            <ul className="segment-list">
+              {reasoning.map(({ index, event }) => (
+                <li key={index} className="segment-card deliverable-card">
+                  <h4 className="deliverable-title">{event.kind}</h4>
+                  <p className="deliverable-content">{JSON.stringify(event.payload)}</p>
                 </li>
               ))}
             </ul>
           </section>
         )}
 
-        {results.length > 0 && (
-          <section className="segment-section">
-            <h3 className="segment-section-title">Results / Deliverables</h3>
-            <ul className="segment-list">
-              {results.map(({ index, event }) =>
-                isDeliverableEvent(event) ? (
-                  <li key={index} className="segment-card deliverable-card">
-                    {event.title && <h4 className="deliverable-title">{event.title}</h4>}
-                    {event.content && <p className="deliverable-content">{event.content}</p>}
-                  </li>
-                ) : null
-              )}
-            </ul>
-          </section>
-        )}
-
-        {actions.length === 0 && fileChanges.length === 0 && results.length === 0 && (
-          <p className="segment-empty">No actions, file changes, or deliverables in this step.</p>
+        {actionEvents.length === 0 && fileChanges.length === 0 && reasoning.length === 0 && (
+          <p className="segment-empty">No activities recorded in this segment.</p>
         )}
       </div>
     </div>
   );
 }
+

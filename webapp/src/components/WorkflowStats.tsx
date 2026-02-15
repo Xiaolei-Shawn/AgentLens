@@ -11,13 +11,10 @@ interface WorkflowStatsProps {
 
 function formatDuration(events: Session["events"]): string {
   if (events.length < 2) return "—";
-  const first =
-    "at" in events[0] && events[0].at ? new Date(events[0].at).getTime() : 0;
-  const last =
-    "at" in events[events.length - 1] &&
-    (events[events.length - 1] as { at?: string }).at
-      ? new Date((events[events.length - 1] as { at: string }).at).getTime()
-      : 0;
+  const first = events[0].ts ? new Date(events[0].ts).getTime() : 0;
+  const last = events[events.length - 1].ts
+    ? new Date(events[events.length - 1].ts).getTime()
+    : 0;
   if (last <= first) return "—";
   const sec = (last - first) / 1000;
   const m = Math.floor(sec / 60);

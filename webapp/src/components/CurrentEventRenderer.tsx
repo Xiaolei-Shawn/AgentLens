@@ -1,12 +1,10 @@
 import { createTwoFilesPatch } from "diff";
 import {
-  isPlanStepEvent,
-  isAuditEvent,
-  isDeliverableEvent,
-  isFileEditEvent,
-  isFileCreateEvent,
-  isFileDeleteEvent,
+  getFilePathFromFileOp,
+  getPayloadString,
+  isFileOpEvent,
   isToolCallEvent,
+  isVerificationEvent,
 } from "../types/session";
 import type { SessionEvent } from "../types/session";
 
@@ -17,39 +15,17 @@ interface CurrentEventRendererProps {
   index: number;
 }
 
-function UnifiedDiff({
-  oldContent,
-  newContent,
-  path,
-}: {
-  oldContent: string;
-  newContent: string;
-  path: string;
-}) {
-  const patch = createTwoFilesPatch(
-    path,
-    path,
-    oldContent || "",
-    newContent || "",
-    "before",
-    "after",
-  );
-  const lines = patch.split("\n").slice(5); // skip header
+function UnifiedDiff({ oldContent, newContent, path }: { oldContent: string; newContent: string; path: string }) {
+  const patch = createTwoFilesPatch(path, path, oldContent || "", newContent || "", "before", "after");
+  const lines = patch.split("\n").slice(5);
 
   return (
     <pre className="diff-block">
       {lines.map((line, i) => {
         const className =
-          line.startsWith("+") && !line.startsWith("+++")
-            ? "diff-add"
-            : line.startsWith("-") && !line.startsWith("---")
-              ? "diff-remove"
-              : "";
+          line.startsWith("+") && !line.startsWith("+++") ? "diff-add" : line.startsWith("-") && !line.startsWith("---") ? "diff-remove" : "";
         return (
-          <div
-            key={i}
-            className={className ? `diff-line ${className}` : "diff-line"}
-          >
+          <div key={i} className={className ? `diff-line ${className}` : "diff-line"}>
             {line || " "}
           </div>
         );
@@ -58,94 +34,84 @@ function UnifiedDiff({
   );
 }
 
-export function CurrentEventRenderer({
-  event,
-  index,
-}: CurrentEventRendererProps) {
+function readOldNew(event: SessionEvent): { oldContent?: string; newContent?: string } {
+  const details = event.payload.details && typeof event.payload.details === "object"
+    ? (event.payload.details as Record<string, unknown>)
+    : {};
+  const oldContent =
+    (typeof details.old_content === "string" ? details.old_content : undefined) ??
+    (typeof event.payload.old_content === "string" ? event.payload.old_content : undefined);
+  const newContent =
+    (typeof details.new_content === "string" ? details.new_content : undefined) ??
+    (typeof event.payload.new_content === "string" ? event.payload.new_content : undefined) ??
+    (typeof event.payload.content === "string" ? event.payload.content : undefined);
+  return { oldContent, newContent };
+}
+
+export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps) {
+  const path = getFilePathFromFileOp(event);
+  const action = getPayloadString(event, "action") ?? "unknown";
+  const { oldContent, newContent } = readOldNew(event);
+
   return (
     <div className="current-event-renderer">
       <header className="event-header">
-        <span className="event-type">{event.type}</span>
+        <span className="event-type">{event.kind}</span>
         <span className="event-index">Event {index + 1}</span>
       </header>
       <div className="event-body">
-        {isPlanStepEvent(event) && (
+        {event.kind === "session_start" && <p className="event-meta">Session started.</p>}
+        {event.kind === "session_end" && <p className="event-meta">Session ended.</p>}
+
+        {event.kind === "intent" && (
           <div className="event-text">
-            <h3>{event.step}</h3>
-            {event.index !== undefined && (
-              <p className="event-meta">Step index: {event.index}</p>
-            )}
+            <h3>{getPayloadString(event, "title") ?? "Intent"}</h3>
+            {getPayloadString(event, "description") && <p>{getPayloadString(event, "description")}</p>}
           </div>
         )}
-        {isAuditEvent(event) && (
+
+        {(event.kind === "decision" || event.kind === "assumption") && (
           <div className="event-text event-audit">
-            <h3 className="audit-type">{event.audit_type}</h3>
-            <p>{event.description}</p>
+            <h3 className="audit-type">{event.kind}</h3>
+            <p>{JSON.stringify(event.payload, null, 2)}</p>
           </div>
         )}
-        {isDeliverableEvent(event) && (
+
+        {isVerificationEvent(event) && (
           <div className="event-text">
-            {event.title && <h3>{event.title}</h3>}
-            {event.content && <p>{event.content}</p>}
+            <h3>
+              {getPayloadString(event, "type") ?? "verification"}: {getPayloadString(event, "result") ?? "unknown"}
+            </h3>
+            {getPayloadString(event, "details") && <p>{getPayloadString(event, "details")}</p>}
           </div>
         )}
-        {isFileEditEvent(event) && (
+
+        {isFileOpEvent(event) && (
           <div className="event-file">
-            <p className="event-path">{event.path}</p>
-            {event.old_content != null && event.new_content != null ? (
-              <UnifiedDiff
-                oldContent={event.old_content}
-                newContent={event.new_content}
-                path={event.path}
-              />
-            ) : (
-              <p className="event-meta">No content captured for diff.</p>
+            <p className="event-path">{path ?? "(unknown path)"} ({action})</p>
+            {action === "edit" && oldContent != null && newContent != null && (
+              <UnifiedDiff oldContent={oldContent} newContent={newContent} path={path ?? "file"} />
+            )}
+            {action === "create" && newContent != null && <pre className="code-block">{newContent}</pre>}
+            {action === "delete" && oldContent != null && <pre className="code-block">{oldContent}</pre>}
+            {((action === "edit" && (oldContent == null || newContent == null)) ||
+              ((action === "create" || action === "delete") && oldContent == null && newContent == null)) && (
+              <p className="event-meta">No content captured for file diff.</p>
             )}
           </div>
         )}
-        {isFileCreateEvent(event) && (
-          <div className="event-file">
-            <p className="event-path">{event.path} (created)</p>
-            {event.content != null ? (
-              <pre className="code-block">{event.content}</pre>
-            ) : (
-              <p className="event-meta">No content captured.</p>
-            )}
-          </div>
-        )}
-        {isFileDeleteEvent(event) && (
-          <div className="event-file">
-            <p className="event-path">{event.path} (deleted)</p>
-            {event.old_content != null && (
-              <pre className="code-block">{event.old_content}</pre>
-            )}
-          </div>
-        )}
+
         {isToolCallEvent(event) && (
           <div className="event-text">
-            <h3>{event.name}</h3>
-            {event.args != null && (
-              <details>
-                <summary>Args</summary>
-                <pre className="code-block">
-                  {JSON.stringify(event.args, null, 2)}
-                </pre>
-              </details>
-            )}
-            {event.result != null && (
-              <details>
-                <summary>Result</summary>
-                <pre className="code-block">
-                  {JSON.stringify(event.result, null, 2)}
-                </pre>
-              </details>
-            )}
+            <h3>{getPayloadString(event, "action") ?? "tool_call"}</h3>
+            <details>
+              <summary>Payload</summary>
+              <pre className="code-block">{JSON.stringify(event.payload, null, 2)}</pre>
+            </details>
           </div>
-        )}
-        {event.type === "session_start" && (
-          <p className="event-meta">Session started.</p>
         )}
       </div>
     </div>
   );
 }
+

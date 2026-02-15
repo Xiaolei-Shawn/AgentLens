@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { Session, SessionEvent } from "../types/session";
+import { getPayloadString } from "../types/session";
 import {
   getNodeKind,
   getIconPath,
@@ -50,9 +51,9 @@ function NodeCard({
   const label = getEventShortLabel(event);
   const kind = getNodeKind(event, index, lastIndex);
   const description =
-    event.type === "plan_step" && "step" in event
-      ? (event.step as string).slice(0, 60) +
-        ((event.step as string).length > 60 ? "…" : "")
+    event.kind === "intent"
+      ? ((getPayloadString(event, "description") ?? getPayloadString(event, "title") ?? "").slice(0, 60) +
+        ((getPayloadString(event, "description") ?? getPayloadString(event, "title") ?? "").length > 60 ? "…" : ""))
       : null;
   const total = lastIndex + 1;
   const windowSize = Math.min(BAR_WINDOW_SIZE, total);
@@ -175,9 +176,8 @@ function MetadataPanel({
   index: number;
   sessionId: string;
 }) {
-  const at = "at" in event && event.at ? event.at : "";
-  const timestamp = at || "—";
-  const nodeId = `EVT_${index}_${event.type.toUpperCase()}`;
+  const timestamp = event.ts || "—";
+  const nodeId = `EVT_${index}_${event.kind.toUpperCase()}`;
 
   return (
     <div className="node-view__panel node-view__panel--meta">
@@ -395,7 +395,7 @@ export function NodeView({
         <div className="node-view__panel node-view__panel--config">
           <h4 className="node-view__panel-title">CONFIG</h4>
           <div className="node-view__config-list">
-            <span className="node-view__meta-value">{current.type}</span>
+            <span className="node-view__meta-value">{current.kind}</span>
           </div>
         </div>
         <LogsPanel events={events} currentIndex={currentIndex} />
