@@ -11,6 +11,11 @@
       "import": "./dist/validateSession.js",
       "default": "./dist/validateSession.js"
     },
+    "./event-envelope": {
+      "types": "./dist/event-envelope.d.ts",
+      "import": "./dist/event-envelope.js",
+      "default": "./dist/event-envelope.js"
+    },
     "./session-schema": {
       "types": "./dist/session-schema.d.ts",
       "import": "./dist/session-schema.js",
