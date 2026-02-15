@@ -1,342 +1,461 @@
-/**
- * MCP tool implementations: health, record_*, file_op (record + execute), record_plan, audit_event, flush_sessions, list_sessions.
- */
-
+import { randomUUID } from "node:crypto";
 import * as z from "zod";
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import type { CanonicalEvent } from "@al/schema/event-envelope";
 import {
-  ensureSession,
-  appendEvent,
-  markCompleted,
-  getSession,
-  getCompletedSessions,
+  buildSessionLog,
+  createEvent,
+  createSession,
+  endActiveSession,
+  ensureActiveSession,
+  initializeSessionLog,
+  persistEvent,
+  setActiveIntent,
 } from "./store.js";
-import { flushSession } from "./flush.js";
-import { listSessions } from "./list-sessions.js";
-import { getWorkspaceRoot, resolveWithinWorkspace } from "./config.js";
-import type { SessionEvent } from "@al/schema/session-schema";
 
-// ——— Tool input schemas (Zod) ———
-
-const sessionStartSchema = {
-  session_id: z.string(),
-  started_at: z.string().optional(),
-  title: z.string(),
-  user_message: z.string(),
+type ToolResponse = {
+  content: Array<{ type: "text"; text: string }>;
+  isError?: true;
 };
 
-const planStepSchema = {
-  session_id: z.string(),
-  step: z.string(),
-  index: z.number().optional(),
-  at: z.string().optional(),
-};
+const actor = { type: "agent" as const };
 
-const fileEditSchema = {
-  session_id: z.string(),
-  path: z.string(),
-  old_content: z.string().optional(),
-  new_content: z.string().optional(),
-  at: z.string().optional(),
-};
+const sessionStartSchema = z
+  .object({
+    goal: z.string().min(1),
+    user_prompt: z.string().min(1).optional(),
+    repo: z.string().min(1).optional(),
+    branch: z.string().min(1).optional(),
+  })
+  .strict();
 
-const fileCreateSchema = {
-  session_id: z.string(),
-  path: z.string(),
-  content: z.string().optional(),
-  at: z.string().optional(),
-};
+const intentSchema = z
+  .object({
+    title: z.string().min(1),
+    description: z.string().min(1).optional(),
+    priority: z.number().optional(),
+  })
+  .strict();
 
-const fileDeleteSchema = {
-  session_id: z.string(),
-  path: z.string(),
-  at: z.string().optional(),
-};
+const activitySchema = z
+  .object({
+    category: z.enum(["file", "tool", "search", "execution"]),
+    action: z.string().min(1),
+    target: z.string().optional(),
+    details: z.record(z.unknown()).optional(),
+  })
+  .strict();
 
-const deliverableSchema = {
-  session_id: z.string(),
-  title: z.string().optional(),
-  content: z.string().optional(),
-  at: z.string().optional(),
-};
+const decisionSchema = z
+  .object({
+    summary: z.string().min(1),
+    rationale: z.string().optional(),
+    options: z.array(z.string()).optional(),
+    chosen_option: z.string().optional(),
+    reversibility: z.enum(["easy", "medium", "hard"]).optional(),
+  })
+  .strict();
 
-const toolCallSchema = {
-  session_id: z.string(),
-  name: z.string(),
-  args: z.unknown().optional(),
-  result: z.unknown().optional(),
-  at: z.string().optional(),
-};
+const assumptionSchema = z
+  .object({
+    statement: z.string().min(1),
+    validated: z.union([z.boolean(), z.literal("unknown")]).optional(),
+    risk: z.enum(["low", "medium", "high"]).optional(),
+  })
+  .strict();
 
-const sessionEndSchema = {
-  session_id: z.string(),
-};
+const verificationSchema = z
+  .object({
+    type: z.enum(["test", "lint", "typecheck", "manual"]),
+    result: z.enum(["pass", "fail", "unknown"]),
+    details: z.string().optional(),
+  })
+  .strict();
 
-/** Gateway tool: record + execute. Action create | edit | delete. */
-const fileOpSchema = {
-  session_id: z.string(),
-  path: z.string(),
-  action: z.enum(["create", "edit", "delete"]),
-  content: z.string().optional(),
-};
+const sessionEndSchema = z
+  .object({
+    outcome: z.enum(["completed", "partial", "failed", "aborted"]),
+    summary: z.string().optional(),
+  })
+  .strict();
 
-/** Batch plan steps for Story view; links future file_ops to step indices. */
-const recordPlanSchema = {
-  session_id: z.string(),
-  steps: z.array(z.string()),
-};
-
-/** Non-file events: decisions, milestones, notes. */
-const auditEventSchema = {
-  session_id: z.string(),
-  type: z.string(),
-  description: z.string(),
-  at: z.string().optional(),
-};
-
-// ——— Helpers ———
-
-function textContent(text: string) {
-  return { content: [{ type: "text" as const, text }] };
+function textContent(value: unknown): ToolResponse {
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return { content: [{ type: "text", text }] };
 }
 
-function errorContent(message: string) {
-  return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true as const };
-}
-
-// ——— Handlers ———
-
-/** Tool names this server exposes. Call health to verify your MCP binding exposes these. */
-export const EXPOSED_TOOLS = [
-  "health",
-  "record_session_start",
-  "record_plan_step",
-  "record_plan",
-  "record_plan_batch",
-  "file_op",
-  "record_file_op",
-  "record_file_edit",
-  "record_file_create",
-  "record_file_delete",
-  "record_deliverable",
-  "audit_event",
-  "record_audit_event",
-  "record_tool_call",
-  "record_session_end",
-  "flush_sessions",
-  "list_sessions",
-] as const;
-
-export async function handleHealth(): Promise<{ content: { type: "text"; text: string }[] }> {
-  const payload = {
-    status: "ok",
-    service: "al-mcp",
-    timestamp: new Date().toISOString(),
-    tools: [...EXPOSED_TOOLS],
-    note: "If your client does not list record_plan, file_op, or audit_event, use aliases: record_plan_batch, record_file_op, record_audit_event (same params).",
+function errorContent(error: unknown): ToolResponse {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    content: [{ type: "text", text: `Error: ${message}` }],
+    isError: true,
   };
-  return textContent(JSON.stringify(payload, null, 2));
 }
 
-export async function handleRecordSessionStart(args: z.infer<z.ZodObject<typeof sessionStartSchema>>) {
-  const started_at = args.started_at ?? new Date().toISOString();
-  ensureSession(args.session_id, started_at, args.title, args.user_message);
-  const event: SessionEvent = { type: "session_start", at: started_at };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "session_start recorded" : "duplicate ignored");
-}
-
-export async function handleRecordPlanStep(args: z.infer<z.ZodObject<typeof planStepSchema>>) {
-  const event: SessionEvent = { type: "plan_step", step: args.step, index: args.index, at: args.at };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "plan_step recorded" : "duplicate ignored");
-}
-
-export async function handleRecordFileEdit(args: z.infer<z.ZodObject<typeof fileEditSchema>>) {
-  const event: SessionEvent = {
-    type: "file_edit",
-    path: args.path,
-    old_content: args.old_content,
-    new_content: args.new_content,
-    at: args.at,
+async function appendCurrentSessionEvent(input: {
+  kind: string;
+  payload: Record<string, unknown>;
+  scope?: {
+    intent_id?: string;
+    file?: string;
+    module?: string;
   };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "file_edit recorded" : "duplicate ignored");
+  visibility?: "raw" | "review" | "debug";
+}): Promise<CanonicalEvent> {
+  const state = ensureActiveSession();
+  const event = createEvent(state, {
+    session_id: state.session_id,
+    kind: input.kind,
+    actor,
+    scope: input.scope,
+    payload: input.payload,
+    visibility: input.visibility,
+  });
+  await persistEvent(event);
+  return event;
 }
 
-export async function handleRecordFileCreate(args: z.infer<z.ZodObject<typeof fileCreateSchema>>) {
-  const event: SessionEvent = {
-    type: "file_create",
-    path: args.path,
-    content: args.content,
-    at: args.at,
-  };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "file_create recorded" : "duplicate ignored");
-}
-
-export async function handleRecordFileDelete(args: z.infer<z.ZodObject<typeof fileDeleteSchema>>) {
-  const event: SessionEvent = { type: "file_delete", path: args.path, at: args.at };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "file_delete recorded" : "duplicate ignored");
-}
-
-export async function handleRecordDeliverable(args: z.infer<z.ZodObject<typeof deliverableSchema>>) {
-  const event: SessionEvent = {
-    type: "deliverable",
-    title: args.title,
-    content: args.content,
-    at: args.at,
-  };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "deliverable recorded" : "duplicate ignored");
-}
-
-export async function handleRecordToolCall(args: z.infer<z.ZodObject<typeof toolCallSchema>>) {
-  const event: SessionEvent = {
-    type: "tool_call",
-    name: args.name,
-    args: args.args,
-    result: args.result,
-    at: args.at,
-  };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? "tool_call recorded" : "duplicate ignored");
-}
-
-export async function handleRecordSessionEnd(args: z.infer<z.ZodObject<typeof sessionEndSchema>>) {
-  const s = getSession(args.session_id);
-  if (!s) return errorContent(`Session not found: ${args.session_id}`);
-  markCompleted(args.session_id);
-  const result = flushSession(s);
-  if (result.error) return errorContent(result.error);
-  return textContent(`Session ended and flushed to ${result.path}`);
-}
-
-export async function handleFlushSessions() {
-  const completed = getCompletedSessions();
-  const results: string[] = [];
-  for (const s of completed) {
-    const r = flushSession(s);
-    if (r.error) results.push(`${s.id}: ${r.error}`);
-    else results.push(`${s.id}: ${r.path}`);
-  }
-  if (results.length === 0) return textContent("No completed sessions to flush.");
-  return textContent(results.join("\n"));
-}
-
-export async function handleListSessions() {
-  const entries = listSessions();
-  return textContent(JSON.stringify(entries, null, 2));
-}
-
-// ——— Middleware (record + execute) ———
-
-export async function handleFileOp(args: z.infer<z.ZodObject<typeof fileOpSchema>>) {
-  const { session_id, path: rawPath, action, content } = args;
-  const s = getSession(session_id);
-  if (!s) return errorContent(`Session not found: ${session_id}`);
-  if (s.completed) return errorContent("Session already completed");
-
-  const workspaceRoot = getWorkspaceRoot();
-  let resolvedPath: string;
+export async function handleRecordSessionStart(
+  raw: z.infer<typeof sessionStartSchema>
+): Promise<ToolResponse> {
   try {
-    resolvedPath = resolveWithinWorkspace(workspaceRoot, rawPath);
-  } catch (e) {
-    return errorContent(e instanceof Error ? e.message : "Path escapes workspace");
-  }
-
-  const at = new Date().toISOString();
-
-  try {
-    if (action === "create") {
-      const newContent = content ?? "";
-      const event: SessionEvent = { type: "file_create", path: rawPath, content: newContent, at };
-      const { error } = appendEvent(session_id, event);
-      if (error) return errorContent(error);
-      mkdirSync(dirname(resolvedPath), { recursive: true });
-      writeFileSync(resolvedPath, newContent, "utf-8");
-      return textContent(`Created ${rawPath}`);
-    }
-
-    if (action === "edit") {
-      const exists = existsSync(resolvedPath);
-      if (!exists) return errorContent(`File not found for edit: ${rawPath}`);
-      const oldContent = readFileSync(resolvedPath, "utf-8");
-      const newContent = content ?? "";
-      const event: SessionEvent = {
-        type: "file_edit",
-        path: rawPath,
-        old_content: oldContent,
-        new_content: newContent,
-        at,
-      };
-      const { error } = appendEvent(session_id, event);
-      if (error) return errorContent(error);
-      writeFileSync(resolvedPath, newContent, "utf-8");
-      return textContent(`Updated ${rawPath}`);
-    }
-
-    if (action === "delete") {
-      const oldContent = existsSync(resolvedPath) ? readFileSync(resolvedPath, "utf-8") : undefined;
-      const event: SessionEvent = { type: "file_delete", path: rawPath, at };
-      if (oldContent !== undefined) (event as { old_content?: string }).old_content = oldContent;
-      const { error } = appendEvent(session_id, event);
-      if (error) return errorContent(error);
-      if (existsSync(resolvedPath)) unlinkSync(resolvedPath);
-      return textContent(`Deleted ${rawPath}`);
-    }
+    const args = sessionStartSchema.parse(raw);
+    const state = createSession(args);
+    initializeSessionLog(state);
+    const event = createEvent(state, {
+      session_id: state.session_id,
+      kind: "session_start",
+      actor,
+      payload: {
+        goal: args.goal,
+        user_prompt: args.user_prompt,
+        repo: args.repo,
+        branch: args.branch,
+      },
+      visibility: "review",
+    });
+    await persistEvent(event);
+    return textContent({
+      session_id: state.session_id,
+      event_id: event.id,
+      seq: event.seq,
+      ts: event.ts,
+    });
   } catch (err) {
-    return errorContent(err instanceof Error ? err.message : String(err));
+    return errorContent(err);
   }
-
-  return errorContent("Invalid action");
 }
 
-export async function handleRecordPlan(args: z.infer<z.ZodObject<typeof recordPlanSchema>>) {
-  const at = new Date().toISOString();
-  for (let i = 0; i < args.steps.length; i++) {
-    const event: SessionEvent = { type: "plan_step", step: args.steps[i], index: i, at };
-    const { error } = appendEvent(args.session_id, event);
-    if (error) return errorContent(error);
+export async function handleRecordIntent(raw: z.infer<typeof intentSchema>): Promise<ToolResponse> {
+  try {
+    const args = intentSchema.parse(raw);
+    const intentId = `intent_${Date.now()}_${randomUUID().slice(0, 8)}`;
+    setActiveIntent(intentId);
+    const event = await appendCurrentSessionEvent({
+      kind: "intent",
+      payload: {
+        intent_id: intentId,
+        title: args.title,
+        description: args.description,
+        priority: args.priority,
+      },
+      scope: { intent_id: intentId },
+      visibility: "review",
+    });
+    return textContent({
+      intent_id: intentId,
+      event_id: event.id,
+      seq: event.seq,
+      ts: event.ts,
+    });
+  } catch (err) {
+    return errorContent(err);
   }
-  return textContent(`Recorded ${args.steps.length} plan steps`);
 }
 
-export async function handleAuditEvent(args: z.infer<z.ZodObject<typeof auditEventSchema>>) {
-  const event: SessionEvent = {
-    type: "audit_event",
-    audit_type: args.type,
-    description: args.description,
-    at: args.at,
-  };
-  const { appended, error } = appendEvent(args.session_id, event);
-  if (error) return errorContent(error);
-  return textContent(appended ? `Audit event recorded: ${args.type}` : "duplicate ignored");
+export async function handleRecordActivity(raw: z.infer<typeof activitySchema>): Promise<ToolResponse> {
+  try {
+    const args = activitySchema.parse(raw);
+    const state = ensureActiveSession();
+    const kind = args.category === "file" ? "file_op" : "tool_call";
+    const scope = {
+      intent_id: state.active_intent_id,
+      file: args.category === "file" ? args.target : undefined,
+      module:
+        args.details && typeof args.details.module === "string"
+          ? (args.details.module as string)
+          : undefined,
+    };
+
+    const event = await appendCurrentSessionEvent({
+      kind,
+      payload: {
+        category: args.category,
+        action: args.action,
+        target: args.target,
+        details: args.details ?? {},
+      },
+      scope,
+      visibility: "raw",
+    });
+    return textContent({
+      event_id: event.id,
+      kind: event.kind,
+      seq: event.seq,
+      ts: event.ts,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
 }
 
-// Export schemas for server registration
+export async function handleRecordDecision(raw: z.infer<typeof decisionSchema>): Promise<ToolResponse> {
+  try {
+    const args = decisionSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "decision",
+      payload: {
+        summary: args.summary,
+        rationale: args.rationale,
+        options: args.options,
+        chosen_option: args.chosen_option,
+        reversibility: args.reversibility,
+      },
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({
+      event_id: event.id,
+      seq: event.seq,
+      ts: event.ts,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordAssumption(
+  raw: z.infer<typeof assumptionSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = assumptionSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "assumption",
+      payload: {
+        statement: args.statement,
+        validated: args.validated ?? "unknown",
+        risk: args.risk,
+      },
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+      });
+    return textContent({
+      event_id: event.id,
+      seq: event.seq,
+      ts: event.ts,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordVerification(
+  raw: z.infer<typeof verificationSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = verificationSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "verification",
+      payload: {
+        type: args.type,
+        result: args.result,
+        details: args.details,
+      },
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({
+      event_id: event.id,
+      seq: event.seq,
+      ts: event.ts,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordSessionEnd(
+  raw: z.infer<typeof sessionEndSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = sessionEndSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = createEvent(state, {
+      session_id: state.session_id,
+      kind: "session_end",
+      actor,
+      payload: {
+        outcome: args.outcome,
+        summary: args.summary,
+      },
+      visibility: "review",
+    });
+    await persistEvent(event);
+    const ended = await endActiveSession(event.ts);
+    const snapshot = buildSessionLog(ended, [event]);
+    return textContent({
+      session_id: ended.session_id,
+      ended_at: ended.ended_at,
+      final_event_id: event.id,
+      seq: event.seq,
+      outcome: args.outcome,
+      note: "Events are persisted as JSONL per session in AL_SESSIONS_DIR.",
+      session_log_preview: snapshot,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
 export const toolSchemas = {
-  health: { inputSchema: {} as Record<string, z.ZodTypeAny> },
-  record_session_start: { inputSchema: sessionStartSchema },
-  record_plan_step: { inputSchema: planStepSchema },
-  record_plan: { inputSchema: recordPlanSchema },
-  record_file_edit: { inputSchema: fileEditSchema },
-  record_file_create: { inputSchema: fileCreateSchema },
-  record_file_delete: { inputSchema: fileDeleteSchema },
-  file_op: { inputSchema: fileOpSchema },
-  record_deliverable: { inputSchema: deliverableSchema },
-  audit_event: { inputSchema: auditEventSchema },
-  record_tool_call: { inputSchema: toolCallSchema },
-  record_session_end: { inputSchema: sessionEndSchema },
-  flush_sessions: { inputSchema: {} as Record<string, z.ZodTypeAny> },
-  list_sessions: { inputSchema: {} as Record<string, z.ZodTypeAny> },
+  record_session_start: { inputSchema: sessionStartSchema.shape },
+  record_intent: { inputSchema: intentSchema.shape },
+  record_activity: { inputSchema: activitySchema.shape },
+  record_decision: { inputSchema: decisionSchema.shape },
+  record_assumption: { inputSchema: assumptionSchema.shape },
+  record_verification: { inputSchema: verificationSchema.shape },
+  record_session_end: { inputSchema: sessionEndSchema.shape },
 } as const;
+
+export const EVENT_EXAMPLES = {
+  record_session_start: {
+    id: "sess_1739620000000_abcd1234:1:a1b2c3d4",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 1,
+    ts: "2026-02-15T20:00:00.000Z",
+    kind: "session_start",
+    actor: { type: "agent" },
+    payload: {
+      goal: "Add robust audit logging",
+      user_prompt: "Refactor tools to canonical event model",
+      repo: "AL/mcp-server",
+      branch: "codex/refactor-audit-tools",
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_intent: {
+    id: "sess_1739620000000_abcd1234:2:e5f6a7b8",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 2,
+    ts: "2026-02-15T20:00:10.000Z",
+    kind: "intent",
+    actor: { type: "agent" },
+    scope: { intent_id: "intent_1739620010000_1122aabb" },
+    payload: {
+      intent_id: "intent_1739620010000_1122aabb",
+      title: "Replace old MCP tools",
+      description: "Converge to 7 semantic tools",
+      priority: 1,
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_activity: {
+    id: "sess_1739620000000_abcd1234:3:c9d0e1f2",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 3,
+    ts: "2026-02-15T20:00:20.000Z",
+    kind: "file_op",
+    actor: { type: "agent" },
+    scope: {
+      intent_id: "intent_1739620010000_1122aabb",
+      file: "src/tools.ts",
+      module: "tools",
+    },
+    payload: {
+      category: "file",
+      action: "edit",
+      target: "src/tools.ts",
+      details: { lines_changed: 120, module: "tools" },
+    },
+    visibility: "raw",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_decision: {
+    id: "sess_1739620000000_abcd1234:4:3344ccdd",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 4,
+    ts: "2026-02-15T20:00:30.000Z",
+    kind: "decision",
+    actor: { type: "agent" },
+    scope: { intent_id: "intent_1739620010000_1122aabb" },
+    payload: {
+      summary: "Use JSONL for append-only persistence",
+      rationale: "Reduces corruption risk and preserves ordering",
+      options: ["single JSON rewrite", "JSONL append-only"],
+      chosen_option: "JSONL append-only",
+      reversibility: "easy",
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_assumption: {
+    id: "sess_1739620000000_abcd1234:5:99aabbcc",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 5,
+    ts: "2026-02-15T20:00:40.000Z",
+    kind: "assumption",
+    actor: { type: "agent" },
+    scope: { intent_id: "intent_1739620010000_1122aabb" },
+    payload: {
+      statement: "Single active session is sufficient for one agent run",
+      validated: "unknown",
+      risk: "medium",
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_verification: {
+    id: "sess_1739620000000_abcd1234:6:77dd8899",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 6,
+    ts: "2026-02-15T20:00:50.000Z",
+    kind: "verification",
+    actor: { type: "agent" },
+    scope: { intent_id: "intent_1739620010000_1122aabb" },
+    payload: {
+      type: "test",
+      result: "pass",
+      details: "npm run build",
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+  record_session_end: {
+    id: "sess_1739620000000_abcd1234:7:44ee66ff",
+    session_id: "sess_1739620000000_abcd1234",
+    seq: 7,
+    ts: "2026-02-15T20:01:00.000Z",
+    kind: "session_end",
+    actor: { type: "agent" },
+    payload: {
+      outcome: "completed",
+      summary: "Tool model refactor finished",
+    },
+    visibility: "review",
+    schema_version: 1,
+  } satisfies CanonicalEvent,
+} as const;
+
+export const AGENT_INSTRUCTIONS = [
+  "Call record_session_start once before any other tool.",
+  "Call record_intent whenever objective shifts; use one intent per cohesive chunk.",
+  "Use record_activity for every meaningful file/tool/search/execution step.",
+  "Use record_decision for irreversible or high-impact choices.",
+  "Use record_assumption for uncertain premises that affect implementation.",
+  "Use record_verification for tests/lint/typecheck/manual checks with explicit result.",
+  "Call record_session_end exactly once to close the session.",
+] as const;
