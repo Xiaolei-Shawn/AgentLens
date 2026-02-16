@@ -15,6 +15,7 @@ export function ReviewerHighlights({ normalized, reviewer }: ReviewerHighlightsP
   const sessionImpact = normalized.impacts.find((i) => i.intent_id === undefined);
   const highRisk = reviewer.high_risk_items.slice(0, 3);
   const topHotspots = reviewer.hotspots.slice(0, 5);
+  const totalTokens = reviewer.token_summary?.total_tokens ?? 0;
 
   return (
     <section className="reviewer-highlights">
@@ -26,6 +27,11 @@ export function ReviewerHighlights({ normalized, reviewer }: ReviewerHighlightsP
           <span className="reviewer-pill">
             Verification: {reviewer.verification_summary.coverage} ({reviewer.verification_summary.pass} pass / {reviewer.verification_summary.fail} fail)
           </span>
+          {reviewer.token_summary && (
+            <span className="reviewer-pill">
+              Tokens: {totalTokens.toLocaleString()} ({reviewer.token_summary.prompt_tokens.toLocaleString()} in / {reviewer.token_summary.completion_tokens.toLocaleString()} out)
+            </span>
+          )}
         </div>
       </header>
 
@@ -39,7 +45,10 @@ export function ReviewerHighlights({ normalized, reviewer }: ReviewerHighlightsP
               {highRisk.map((item, i) => (
                 <li key={`${item.intent_id ?? "session"}-${i}`}>
                   <span className={riskClass(item.level)}>{item.level}</span>{" "}
-                  <strong>{item.intent_id ?? "session"}</strong>: {item.reasons.join("; ")}
+                  <strong>{item.intent_id ?? "session"}</strong> (score {item.score}): {item.reasons.join("; ")}
+                  {item.mitigations.length > 0 && (
+                    <div><em>Mitigation:</em> {item.mitigations[0]}</div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -80,4 +89,3 @@ export function ReviewerHighlights({ normalized, reviewer }: ReviewerHighlightsP
     </section>
   );
 }
-

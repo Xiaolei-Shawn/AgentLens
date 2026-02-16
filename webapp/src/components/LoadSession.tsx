@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { validateSession } from "../lib/validateSession";
 import type { Session } from "../types/session";
 
@@ -9,9 +9,67 @@ interface LoadSessionProps {
   onError: (message: string) => void;
 }
 
+interface LocalSessionSummary {
+  key: string;
+  session_id: string;
+  goal?: string;
+  started_at?: string;
+  ended_at?: string;
+  outcome?: "completed" | "partial" | "failed" | "aborted" | "unknown";
+  event_count: number;
+  updated_at: string;
+}
+
+const API_BASE = (import.meta.env.VITE_AUDIT_API_BASE as string | undefined)?.trim() ?? "";
+
 export function LoadSession({ onLoad, onError }: LoadSessionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [isLoadingLocal, setIsLoadingLocal] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localSessions, setLocalSessions] = useState<LocalSessionSummary[]>([]);
+
+  const fetchLocalSessions = useCallback(async () => {
+    setIsLoadingLocal(true);
+    setLocalError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/sessions`, { method: "GET" });
+      if (!response.ok) throw new Error(`Session API returned ${response.status}`);
+      const data = (await response.json()) as { sessions?: LocalSessionSummary[] };
+      const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+      setLocalSessions(sessions);
+    } catch (err) {
+      setLocalSessions([]);
+      setLocalError(err instanceof Error ? err.message : "Failed to load local sessions.");
+    } finally {
+      setIsLoadingLocal(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchLocalSessions();
+  }, [fetchLocalSessions]);
+
+  const loadLocalSession = useCallback(
+    async (sessionKey: string) => {
+      try {
+        const response = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionKey)}`, {
+          method: "GET",
+        });
+        if (!response.ok) throw new Error(`Failed to load session (${response.status})`);
+        const data = (await response.json()) as unknown;
+        const result = validateSession(data);
+        if (result.success) {
+          onLoad(result.data);
+          return;
+        }
+        onError(result.errors.map((e) => `${e.instancePath}: ${e.message ?? e.keyword}`).join("\n"));
+      } catch (err) {
+        onError(err instanceof Error ? err.message : "Failed to load local session.");
+      }
+    },
+    [onError, onLoad]
+  );
 
   const handleFile = useCallback(
     (file: File) => {
@@ -133,6 +191,43 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           Import Session File
         </button>
       </div>
+      <div className="load-session__local">
+        <div className="load-session__local-head">
+          <h2>Local Sessions</h2>
+          <button
+            type="button"
+            onClick={() => void fetchLocalSessions()}
+            className="load-session__refresh-btn"
+            disabled={isLoadingLocal}
+          >
+            {isLoadingLocal ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {localError ? (
+          <p className="load-session__local-error">
+            Local dashboard API unavailable ({localError}). File import still works.
+          </p>
+        ) : null}
+        {!localError && localSessions.length === 0 ? (
+          <p className="load-session__local-empty">No session files found in local storage.</p>
+        ) : null}
+        <div className="load-session__local-list">
+          {localSessions.slice(0, 12).map((session) => (
+            <button
+              type="button"
+              key={`${session.key}-${session.updated_at}`}
+              className="load-session__local-item"
+              onClick={() => void loadLocalSession(session.key)}
+              title={session.goal ?? session.session_id}
+            >
+              <div className="load-session__local-title">{session.goal ?? session.session_id}</div>
+              <div className="load-session__local-meta">
+                {session.event_count} events · {session.outcome ?? "unknown"} · {new Date(session.updated_at).toLocaleString()}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
       <input
         ref={inputRef}
         type="file"
@@ -141,7 +236,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         className="file-input"
         aria-label="Choose session JSON"
       />
-      <div className="load-session__footnote">Single file import only</div>
+      <div className="load-session__footnote">Local-only dashboard: browser is a viewer for on-device session files</div>
     </div>
   );
 }

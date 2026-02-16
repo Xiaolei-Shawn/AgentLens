@@ -32,6 +32,8 @@ export function ReviewerFocusPanel({
   const topHotspots = normalized.hotspots.slice(0, 8);
   const topRevisions = normalized.revisions.slice(0, 6);
   const highSignals = criticalEvents.filter((e) => e.severity === "high");
+  const topTokenCategory = reviewer.token_summary?.by_category[0];
+  const recommendedActions = reviewer.recommended_actions.slice(0, 5);
 
   return (
     <section className="reviewer-focus">
@@ -52,7 +54,10 @@ export function ReviewerFocusPanel({
             <ul>
               {highRisk.map((r, i) => (
                 <li key={`${r.intent_id ?? "session"}-${i}`}>
-                  <strong>{r.intent_id ?? "session"}</strong>: {r.reasons.join("; ")}
+                  <strong>{r.intent_id ?? "session"}</strong> (score {r.score}): {r.reasons.join("; ")}
+                  {r.mitigations.length > 0 && (
+                    <div><em>Mitigation:</em> {r.mitigations[0]}</div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -71,6 +76,12 @@ export function ReviewerFocusPanel({
             <li>
               Coverage: <strong>{reviewer.verification_summary.coverage}</strong>
             </li>
+            {reviewer.token_summary && (
+              <li>
+                Tokens: <strong>{reviewer.token_summary.total_tokens.toLocaleString()}</strong>
+                {topTokenCategory ? ` (top: ${topTokenCategory.category} ${topTokenCategory.total_tokens.toLocaleString()})` : ""}
+              </li>
+            )}
           </ul>
         </article>
 
@@ -92,6 +103,27 @@ export function ReviewerFocusPanel({
 
       <div className="reviewer-focus__grid reviewer-focus__grid--2">
         <article className="reviewer-focus__card">
+          <h3>Recommended Actions</h3>
+          {recommendedActions.length === 0 ? (
+            <p>No immediate follow-up actions suggested.</p>
+          ) : (
+            <ul>
+              {recommendedActions.map((suggestion) => (
+                <li key={suggestion.id}>
+                  <strong>{suggestion.title}</strong> [{suggestion.priority}]{" "}
+                  <span className="reviewer-focus__badge">{suggestion.category}</span>
+                  <div className="reviewer-focus__actions">
+                    {suggestion.actions.map((action, idx) => (
+                      <code key={`${suggestion.id}-${action.type}-${idx}`}>{action.label}</code>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+
+        <article className="reviewer-focus__card">
           <h3>Critical Event Jump List</h3>
           {criticalEvents.length === 0 ? (
             <p>No critical event markers.</p>
@@ -112,7 +144,7 @@ export function ReviewerFocusPanel({
           )}
         </article>
 
-        <article className="reviewer-focus__card">
+        <article className="reviewer-focus__card reviewer-focus__card--wide">
           <h3>Revision Signals</h3>
           {topRevisions.length === 0 ? (
             <p>No revision artifacts.</p>
@@ -133,4 +165,3 @@ export function ReviewerFocusPanel({
     </section>
   );
 }
-

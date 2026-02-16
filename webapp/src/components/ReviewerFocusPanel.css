@@ -33,7 +33,7 @@
 }
 
 .reviewer-focus__grid--2 {
-  grid-template-columns: 1.3fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .reviewer-focus__card {
@@ -74,6 +74,35 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+.reviewer-focus__badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(125, 211, 252, 0.95);
+  background: rgba(8, 47, 73, 0.35);
+}
+
+.reviewer-focus__actions {
+  margin-top: 0.22rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.reviewer-focus__actions code {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.08rem 0.3rem;
+  font-size: 0.67rem;
+  color: rgba(224, 242, 254, 0.95);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .reviewer-focus__jump-list {
   display: grid;
   gap: 0.35rem;
@@ -112,6 +141,10 @@
   color: rgba(255, 255, 255, 0.72) !important;
 }
 
+.reviewer-focus__card--wide {
+  grid-column: span 3;
+}
+
 @media (max-width: 1080px) {
   .reviewer-focus__grid {
     grid-template-columns: 1fr;
@@ -121,4 +154,3 @@
     grid-template-columns: 1fr;
   }
 }
-

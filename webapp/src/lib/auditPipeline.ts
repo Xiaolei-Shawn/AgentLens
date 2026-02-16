@@ -1,9 +1,33 @@
 import type { CanonicalEvent } from "@al/schema/event-envelope";
+import {
+  generateSuggestions,
+  type Suggestion,
+  type AssumptionArtifactInput,
+  type HotspotArtifactInput,
+  type RiskArtifactInput,
+} from "./actionRecommendationEngine";
 
 type SessionOutcome = "completed" | "partial" | "failed" | "aborted" | "unknown";
 type IntentStatus = "completed" | "partial" | "abandoned";
 type BlastRadius = "small" | "medium" | "large";
 type RiskLevel = "low" | "medium" | "high";
+type RiskFactorKey =
+  | "public_api_changed"
+  | "schema_changed"
+  | "dependency_changed"
+  | "blast_radius_large"
+  | "blast_radius_medium"
+  | "high_risk_assumption"
+  | "medium_risk_assumption"
+  | "unknown_assumption"
+  | "verification_missing"
+  | "verification_failed"
+  | "verification_partial"
+  | "revision_high_churn"
+  | "revision_create_delete"
+  | "decision_hard_to_reverse"
+  | "large_change_volume"
+  | "failed_or_partial_outcome";
 
 export interface SessionMetadata {
   session_id: string;
@@ -13,6 +37,7 @@ export interface SessionMetadata {
   outcome: SessionOutcome;
   repo?: string;
   branch?: string;
+  token_usage?: TokenUsageSummary;
   schema_version: number;
 }
 
@@ -79,7 +104,9 @@ export interface RiskArtifact {
   intent_id?: string;
   level: RiskLevel;
   score: number;
+  factors: Array<{ key: RiskFactorKey; score: number; reason: string }>;
   reasons: string[];
+  mitigations: string[];
 }
 
 export interface VerificationArtifact {
@@ -131,14 +158,31 @@ export interface ReviewerVerificationSummary {
   coverage: "full" | "partial" | "none";
 }
 
+export interface TokenUsageSummary {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd?: number;
+  by_category: Array<{ category: string; total_tokens: number }>;
+  by_intent: Array<{ intent_id?: string; total_tokens: number }>;
+}
+
 export interface ReviewerView {
   goal: string;
   outcome: SessionOutcome;
   key_decisions: Array<{ summary: string; rationale?: string; intent_id?: string }>;
-  high_risk_items: Array<{ intent_id?: string; level: RiskLevel; reasons: string[] }>;
+  high_risk_items: Array<{
+    intent_id?: string;
+    level: RiskLevel;
+    score: number;
+    reasons: string[];
+    mitigations: string[];
+  }>;
   hotspots: Array<{ file: string; score: number }>;
   intent_summaries: ReviewerIntentSummary[];
   verification_summary: ReviewerVerificationSummary;
+  token_summary?: TokenUsageSummary;
+  recommended_actions: Suggestion[];
   confidence_estimate: number;
 }
 
@@ -190,6 +234,95 @@ function getFileTarget(event: CanonicalEvent): string | undefined {
 function getModuleFromPath(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts.length === 0 ? "root" : parts[0];
+}
+
+function getUsageFromEvent(event: CanonicalEvent): {
+  model?: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd?: number;
+} | null {
+  const payload = getPayload(event);
+  const usageRaw = payload.usage;
+  const detailsRaw = payload.details;
+  const nestedUsage =
+    detailsRaw && typeof detailsRaw === "object"
+      ? (detailsRaw as Record<string, unknown>).llm_usage
+      : undefined;
+  const usage =
+    usageRaw && typeof usageRaw === "object"
+      ? (usageRaw as Record<string, unknown>)
+      : nestedUsage && typeof nestedUsage === "object"
+        ? (nestedUsage as Record<string, unknown>)
+        : null;
+  if (!usage) return null;
+
+  const prompt = toNumber(usage.prompt_tokens);
+  const completion = toNumber(usage.completion_tokens);
+  const totalRaw = toNumber(usage.total_tokens);
+  const total = totalRaw > 0 ? totalRaw : prompt + completion;
+  if (total <= 0 && prompt <= 0 && completion <= 0) return null;
+
+  const estimatedCost = toNumber(usage.estimated_cost_usd);
+  return {
+    model: toStringValue(usage.model),
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: total,
+    estimated_cost_usd: estimatedCost > 0 ? estimatedCost : undefined,
+  };
+}
+
+function deriveTokenUsageSummary(events: CanonicalEvent[]): TokenUsageSummary | undefined {
+  let prompt = 0;
+  let completion = 0;
+  let total = 0;
+  let cost = 0;
+  let hasUsage = false;
+  const categoryTotals = new Map<string, number>();
+  const intentTotals = new Map<string, number>();
+
+  for (const event of events) {
+    const usage = getUsageFromEvent(event);
+    if (!usage) continue;
+    hasUsage = true;
+    prompt += usage.prompt_tokens;
+    completion += usage.completion_tokens;
+    total += usage.total_tokens;
+    if (usage.estimated_cost_usd != null) cost += usage.estimated_cost_usd;
+
+    const payload = getPayload(event);
+    const category =
+      event.kind === "tool_call" || event.kind === "file_op"
+        ? toStringValue(payload.category) ?? (event.kind === "file_op" ? "file" : "tool")
+        : event.kind;
+    categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + usage.total_tokens);
+
+    const intentId = getIntentId(event) ?? "session";
+    intentTotals.set(intentId, (intentTotals.get(intentId) ?? 0) + usage.total_tokens);
+  }
+
+  if (!hasUsage) return undefined;
+
+  const byCategory = [...categoryTotals.entries()]
+    .map(([category, totalTokens]) => ({ category, total_tokens: totalTokens }))
+    .sort((a, b) => b.total_tokens - a.total_tokens);
+  const byIntent = [...intentTotals.entries()]
+    .map(([intentId, totalTokens]) => ({
+      intent_id: intentId === "session" ? undefined : intentId,
+      total_tokens: totalTokens,
+    }))
+    .sort((a, b) => b.total_tokens - a.total_tokens);
+
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: total,
+    estimated_cost_usd: cost > 0 ? Number(cost.toFixed(6)) : undefined,
+    by_category: byCategory,
+    by_intent: byIntent,
+  };
 }
 
 function parseOutcome(events: CanonicalEvent[]): SessionOutcome {
@@ -497,9 +630,41 @@ function deriveImpactForEvents(id: string, intentId: string | undefined, events:
   };
 }
 
+const mitigationByFactor: Record<RiskFactorKey, string> = {
+  public_api_changed: "Add or update API contract tests and publish a migration/change note.",
+  schema_changed: "Run forward/backward migration verification and add rollback steps.",
+  dependency_changed: "Run dependency audit/changelog review and pin versions if needed.",
+  blast_radius_large: "Split rollout into phases and add targeted smoke checks per module.",
+  blast_radius_medium: "Add focused integration checks for touched modules before merge.",
+  high_risk_assumption: "Validate high-risk assumptions with data/tests before release.",
+  medium_risk_assumption: "Add explicit validation plan for medium-risk assumptions.",
+  unknown_assumption: "Resolve unknown assumptions or document fallback behavior.",
+  verification_missing: "Run at least test + lint/typecheck and record results.",
+  verification_failed: "Fix failed checks and re-run full verification suite.",
+  verification_partial: "Expand verification to cover changed hotspots and critical flows.",
+  revision_high_churn: "Review change churn and split unstable edits into smaller PRs.",
+  revision_create_delete: "Re-check intent boundaries and remove dead-end implementation paths.",
+  decision_hard_to_reverse: "Add feature flag/rollback guard for hard-to-reverse decisions.",
+  large_change_volume: "Request deeper review and add regression tests for large change set.",
+  failed_or_partial_outcome: "Create follow-up plan with unresolved items and owner.",
+};
+
+function dedupeStrings(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
+}
+
 function deriveRisks(
+  outcome: SessionOutcome,
   impacts: ImpactArtifact[],
   assumptions: NormalizedAssumption[],
+  decisions: NormalizedDecision[],
   revisions: RevisionArtifact[],
   verifications: VerificationArtifact[]
 ): RiskArtifact[] {
@@ -523,58 +688,107 @@ function deriveRisks(
     list.push(v);
     verificationsByIntent.set(v.intent_id, list);
   }
+  const decisionsByIntent = new Map<string | undefined, NormalizedDecision[]>();
+  for (const d of decisions) {
+    const list = decisionsByIntent.get(d.intent_id) ?? [];
+    list.push(d);
+    decisionsByIntent.set(d.intent_id, list);
+  }
+  const revisionsByIntentType = new Map<string | undefined, Set<RevisionArtifact["type"]>>();
+  for (const r of revisions) {
+    const set = revisionsByIntentType.get(r.intent_id) ?? new Set<RevisionArtifact["type"]>();
+    set.add(r.type);
+    revisionsByIntentType.set(r.intent_id, set);
+  }
+  const globalVerifications = verificationsByIntent.get(undefined) ?? [];
 
   for (const impact of impacts) {
-    const reasons: string[] = [];
-    let score = 0;
+    const factors: RiskArtifact["factors"] = [];
+    const addFactor = (key: RiskFactorKey, factorScore: number, reason: string) => {
+      factors.push({ key, score: factorScore, reason });
+    };
     const relevantAssumptions = assumptionsByIntent.get(impact.intent_id) ?? [];
-    const hasHighRiskAssumption = relevantAssumptions.some((a) => a.risk === "high");
-    const localVerifications = verificationsByIntent.get(impact.intent_id) ?? [];
+    const hasHighRiskAssumption = relevantAssumptions.some((a) => a.risk === "high" && a.validated !== true);
+    const hasMediumRiskAssumption = relevantAssumptions.some((a) => a.risk === "medium" && a.validated !== true);
+    const hasUnknownAssumption = relevantAssumptions.some((a) => a.validated === "unknown");
+    const localVerifications = [
+      ...(verificationsByIntent.get(impact.intent_id) ?? []),
+      ...(impact.intent_id === undefined ? [] : globalVerifications),
+    ];
     const hasAnyVerification = localVerifications.length > 0;
     const hasPass = localVerifications.some((v) => v.result === "pass");
     const hasFail = localVerifications.some((v) => v.result === "fail");
+    const hasUnknownVerification = localVerifications.some((v) => v.result === "unknown");
     const revisionCount = revisionsByIntent.get(impact.intent_id) ?? 0;
+    const revisionTypes = revisionsByIntentType.get(impact.intent_id) ?? new Set<RevisionArtifact["type"]>();
+    const impactLineVolume = impact.lines_added + impact.lines_removed;
+    const localDecisions = decisionsByIntent.get(impact.intent_id) ?? [];
+    const hasHardToReverseDecision = localDecisions.some((d) => d.reversibility === "hard");
 
     if (impact.public_api_changed) {
-      reasons.push("Public API changed");
-      score += 4;
+      addFactor("public_api_changed", 4, "Public API changed");
     }
     if (impact.schema_changed) {
-      reasons.push("Schema/migration changed");
-      score += 4;
+      addFactor("schema_changed", 4, "Schema/migration changed");
+    }
+    if (impact.dependency_added) {
+      addFactor("dependency_changed", 2, "Dependency manifest/lock changed");
     }
     if (impact.blast_radius === "large") {
-      reasons.push("Large blast radius");
-      score += 3;
+      addFactor("blast_radius_large", 3, "Large blast radius");
+    } else if (impact.blast_radius === "medium") {
+      addFactor("blast_radius_medium", 2, "Medium blast radius");
     }
     if (hasHighRiskAssumption) {
-      reasons.push("High-risk assumption present");
-      score += 3;
+      addFactor("high_risk_assumption", 3, "High-risk assumption present");
+    } else if (hasMediumRiskAssumption) {
+      addFactor("medium_risk_assumption", 2, "Medium-risk assumption present");
+    }
+    if (hasUnknownAssumption) {
+      addFactor("unknown_assumption", 1, "Assumptions remain unvalidated");
     }
     if (!hasAnyVerification) {
-      reasons.push("No verification events");
-      score += 4;
+      addFactor("verification_missing", 4, "No verification events");
     } else {
-      if (!hasPass || hasFail) {
-        reasons.push("Partial verification coverage");
-        score += 2;
-      }
+      if (hasFail) addFactor("verification_failed", 4, "Verification failure recorded");
+      if (!hasPass || hasUnknownVerification) addFactor("verification_partial", 2, "Verification coverage is partial");
     }
-    if (impact.blast_radius === "medium") score += 2;
     if (revisionCount > 0) {
-      reasons.push("Revisions detected");
-      score += 1;
+      addFactor("revision_high_churn", Math.min(3, revisionCount), `Revisions detected (${revisionCount})`);
+    }
+    if (revisionTypes.has("create_then_delete")) {
+      addFactor("revision_create_delete", 2, "Create-then-delete revision detected");
+    }
+    if (hasHardToReverseDecision) {
+      addFactor("decision_hard_to_reverse", 2, "Hard-to-reverse decision present");
+    }
+    if (impactLineVolume >= 250) {
+      addFactor("large_change_volume", 2, `Large change volume (${impactLineVolume} lines)`);
+    }
+    if (outcome === "failed" || outcome === "partial" || outcome === "aborted") {
+      addFactor("failed_or_partial_outcome", 2, `Session outcome is ${outcome}`);
     }
 
+    const score = factors.reduce((sum, factor) => sum + factor.score, 0);
+    const reasons = factors.map((factor) => factor.reason);
+    const mitigations = dedupeStrings(
+      factors
+        .sort((a, b) => b.score - a.score)
+        .map((factor) => mitigationByFactor[factor.key])
+    ).slice(0, 6);
+
     let level: RiskLevel = "low";
-    const hasHighCondition =
-      impact.public_api_changed ||
-      impact.schema_changed ||
-      impact.blast_radius === "large" ||
-      hasHighRiskAssumption ||
-      !hasAnyVerification;
-    if (hasHighCondition || score >= 8) level = "high";
-    else if (impact.blast_radius === "medium" || revisionCount > 0 || (!hasPass && hasAnyVerification)) {
+    const hasHighCondition = factors.some(
+      (factor) =>
+        factor.key === "public_api_changed" ||
+        factor.key === "schema_changed" ||
+        factor.key === "blast_radius_large" ||
+        factor.key === "high_risk_assumption" ||
+        factor.key === "verification_missing" ||
+        factor.key === "verification_failed"
+    );
+    if (hasHighCondition || score >= 9) level = "high";
+    else if (score >= 4) {
       level = "medium";
     }
 
@@ -583,7 +797,10 @@ function deriveRisks(
       intent_id: impact.intent_id,
       level,
       score,
+      factors,
       reasons: reasons.length > 0 ? reasons : ["No significant risk signals"],
+      mitigations:
+        mitigations.length > 0 ? mitigations : ["Maintain baseline checks and monitor post-merge behavior."],
     });
   }
 
@@ -743,8 +960,9 @@ export function normalizeSessionFromRawEvents(
   }
   impacts.push(deriveImpactForEvents("impact_session_total", undefined, events.filter((e) => e.kind === "file_op")));
 
-  const risks = deriveRisks(impacts, assumptions, revisions, verifications);
+  const risks = deriveRisks(outcome, impacts, assumptions, decisions, revisions, verifications);
   const hotspots = deriveHotspots(events, decisions, assumptions);
+  const tokenUsage = deriveTokenUsageSummary(events);
 
   return {
     metadata: {
@@ -755,6 +973,7 @@ export function normalizeSessionFromRawEvents(
       outcome,
       repo: toStringValue(startPayload.repo),
       branch: toStringValue(startPayload.branch),
+      token_usage: tokenUsage,
       schema_version: first?.schema_version ?? 1,
     },
     intents,
@@ -791,8 +1010,52 @@ export function buildReviewerView(normalized: SessionNormalized): ReviewerView {
     .map((r) => ({
       intent_id: r.intent_id,
       level: r.level,
+      score: r.score,
       reasons: r.reasons,
+      mitigations: r.mitigations,
     }));
+  const impactByIntent = new Map(
+    normalized.impacts.map((impact) => [impact.intent_id ?? "session", impact] as const)
+  );
+  const riskInputs: RiskArtifactInput[] = normalized.risks.map((risk) => {
+    const impact = impactByIntent.get(risk.intent_id ?? "session");
+    return {
+      id: risk.id,
+      level: risk.level,
+      reasons: risk.reasons,
+      scope: {
+        files: impact?.files_touched,
+        modules: impact?.modules_affected,
+      },
+    };
+  });
+  const hotspotInputs: HotspotArtifactInput[] = normalized.hotspots.map((hotspot) => ({
+    id: hotspot.id,
+    file: hotspot.file,
+    score: hotspot.score,
+    reasons: [
+      `edits: ${hotspot.edit_count}`,
+      `lines changed: ${hotspot.lines_changed}`,
+      hotspot.criticality_hits.length > 0
+        ? `criticality: ${hotspot.criticality_hits.join(", ")}`
+        : "no critical directory hit",
+    ],
+  }));
+  const assumptionInputs: AssumptionArtifactInput[] = normalized.assumptions.map((assumption) => {
+    const impact = impactByIntent.get(assumption.intent_id ?? "session");
+    return {
+      id: assumption.event_id,
+      statement: assumption.statement,
+      validated: assumption.validated,
+      risk: assumption.risk,
+      related_files: impact?.files_touched?.slice(0, 4),
+    };
+  });
+  const recommendedActions = generateSuggestions({
+    risks: riskInputs,
+    hotspots: hotspotInputs,
+    assumptions: assumptionInputs,
+  });
 
   return {
     goal: normalized.metadata.goal,
@@ -806,6 +1069,8 @@ export function buildReviewerView(normalized: SessionNormalized): ReviewerView {
     hotspots: normalized.hotspots.slice(0, 8).map((h) => ({ file: h.file, score: h.score })),
     intent_summaries: intentSummaries,
     verification_summary: verificationSummary,
+    token_summary: normalized.metadata.token_usage,
+    recommended_actions: recommendedActions,
     confidence_estimate: deriveConfidence(normalized, verificationSummary),
   };
 }

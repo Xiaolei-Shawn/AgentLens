@@ -211,6 +211,98 @@
   text-align: center;
 }
 
+.load-session__local {
+  position: relative;
+  z-index: 3;
+  width: min(840px, calc(100% - 2rem));
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.26);
+  background: linear-gradient(180deg, rgba(2, 12, 30, 0.64), rgba(2, 6, 23, 0.68));
+  box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.16), 0 18px 38px rgba(2, 6, 23, 0.52);
+  padding: 0.8rem;
+}
+
+.load-session__local-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.load-session__local-head h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.95);
+}
+
+.load-session__refresh-btn {
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.54);
+  color: rgba(224, 242, 254, 0.96);
+  font-size: 0.72rem;
+  padding: 0.22rem 0.7rem;
+  cursor: pointer;
+}
+
+.load-session__refresh-btn:disabled {
+  opacity: 0.64;
+  cursor: default;
+}
+
+.load-session__local-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.load-session__local-item {
+  text-align: left;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.62);
+  color: rgba(241, 245, 249, 0.98);
+  padding: 0.52rem 0.56rem;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.load-session__local-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(56, 189, 248, 0.62);
+  background: rgba(8, 47, 73, 0.5);
+}
+
+.load-session__local-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.load-session__local-meta {
+  margin-top: 0.16rem;
+  font-size: 0.72rem;
+  color: rgba(186, 230, 253, 0.84);
+}
+
+.load-session__local-error,
+.load-session__local-empty {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: rgba(248, 250, 252, 0.9);
+  text-align: left;
+}
+
+.load-session__local-error {
+  color: rgba(252, 165, 165, 0.96);
+}
+
 .load-session__drop-icon {
   margin: 0 auto 0.35rem;
   width: 2.2rem;
@@ -294,5 +386,12 @@
   .load-session__dropzone {
     width: calc(100% - 0.8rem);
     padding: 1rem 0.8rem 0.9rem;
+  }
+  .load-session__local {
+    width: calc(100% - 0.8rem);
+    padding: 0.7rem;
+  }
+  .load-session__local-list {
+    grid-template-columns: 1fr;
   }
 }
