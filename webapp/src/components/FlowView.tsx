@@ -297,6 +297,7 @@ export function FlowView({
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [selectedTransactionIndex, setSelectedTransactionIndex] = useState<number | null>(null);
   const isPanningRef = useRef(false);
   const startPanRef = useRef({ x: 0, y: 0 });
   const startClientRef = useRef({ x: 0, y: 0 });
@@ -335,6 +336,7 @@ export function FlowView({
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
       if ((e.target as Element).closest?.(".flow-view__node-wrap")) return;
+      if ((e.target as Element).closest?.(".flow-view__connector-hit")) return;
       isPanningRef.current = true;
       startPanRef.current = pan;
       startClientRef.current = getViewCoords(e);
@@ -1103,47 +1105,70 @@ export function FlowView({
                   const startY = y0 + inset * uy;
                   const endX = x1 - inset * ux;
                   const endY = y1 - inset * uy;
-                  return (
-                    <path
-                      key={i}
-                      d={`M ${startX} ${startY} L ${endX} ${endY}`}
-                      fill="none"
-                      stroke={
-                        isCriticalEvent(events[i + 1])
-                          ? "#f87171"
-                          : isWarningEvent(events[i + 1])
-                            ? "#f59e0b"
-                            : intentColorMap.get(getIntentId(events[i + 1])) ?? "#38bdf8"
-                      }
-                      strokeWidth={showTravelDenseLabels ? "2" : "1.4"}
-                      opacity={1}
-                      strokeLinecap="round"
-                      markerEnd="url(#flow-arrow)"
-                    />
-                  );
-                })}
-                {/* Duration labels at segment midpoints */}
-                {connectorSegments.map((seg, i) => {
-                  if (shipPerspective || (!showTravelDenseLabels && i !== currentIndex - 1)) return null;
-                  const [x0, y0] = seg.exit;
-                  const [x1, y1] = seg.entry;
+                  const pathD = `M ${startX} ${startY} L ${endX} ${endY}`;
                   const mx = (x0 + x1) / 2;
                   const my = (y0 + y1) / 2;
                   const dur = getDurationMs(events, i, i + 1);
-                  const label = formatDurationMs(dur);
+                  const durLabel = formatDurationMs(dur);
                   const isActive = i === currentIndex - 1;
+                  const showDurLabel = showTravelDenseLabels || i === currentIndex - 1;
+                  const isSelected = i === selectedTransactionIndex;
                   return (
-                    <text
+                    <g
                       key={i}
-                      x={mx}
-                      y={my - 8}
-                      textAnchor="middle"
-                      fill={isActive ? "#0da6f2" : "rgba(255,255,255,0.45)"}
-                      fontSize={showTravelDenseLabels ? 10 : 8}
-                      fontWeight="700"
+                      className={`flow-view__connector-hit ${isSelected ? "flow-view__connector-hit--selected" : ""}`}
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTransactionIndex((prev) => (prev === i ? null : i));
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Transition from event ${i + 1} to ${i + 2}, ${durLabel}`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedTransactionIndex((prev) => (prev === i ? null : i));
+                        }
+                      }}
                     >
-                      {label}
-                    </text>
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth={20}
+                        strokeLinecap="round"
+                      />
+                      <path
+                        className="flow-view__connector-line"
+                        d={pathD}
+                        fill="none"
+                        stroke={
+                          isCriticalEvent(events[i + 1])
+                            ? "#f87171"
+                            : isWarningEvent(events[i + 1])
+                              ? "#f59e0b"
+                              : intentColorMap.get(getIntentId(events[i + 1])) ?? "#38bdf8"
+                        }
+                        strokeWidth={showTravelDenseLabels ? "2" : "1.4"}
+                        opacity={1}
+                        strokeLinecap="round"
+                        markerEnd="url(#flow-arrow)"
+                      />
+                      {showDurLabel && !shipPerspective && (
+                        <text
+                          x={mx}
+                          y={my - 8}
+                          textAnchor="middle"
+                          fill={isActive ? "#0da6f2" : "rgba(255,255,255,0.45)"}
+                          fontSize={showTravelDenseLabels ? 10 : 8}
+                          fontWeight="700"
+                          pointerEvents="none"
+                        >
+                          {durLabel}
+                        </text>
+                      )}
+                    </g>
                   );
                 })}
                 {/* Nodes */}
@@ -1164,7 +1189,10 @@ export function FlowView({
                   const warning = isWarningEvent(event);
                   const intentColor = intentColorMap.get(getIntentId(event)) ?? "#38bdf8";
                   const station = `Station ${String(i + 1).padStart(2, "0")}`;
-                  const level = `Level: ${event.kind}`;
+                  const levelTitle = event.kind
+                    .split("_")
+                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                    .join(" ");
                   const cardW = Math.max(112, 290 * p.scale);
                   const cardH = Math.max(44, (shipPerspective && isCurrent ? 132 : 92) * p.scale);
                   const subtitleSize = Math.max(7, 11 * p.scale);
@@ -1218,7 +1246,7 @@ export function FlowView({
                             className="flow-view__event-card-subtitle"
                             fontSize={subtitleSize}
                           >
-                            {`${level} · ${station}`}
+                            {station}
                           </text>
                           <text
                             x={-cardW / 2 + cardW * 0.08}
@@ -1227,8 +1255,22 @@ export function FlowView({
                             className="flow-view__event-card-title"
                             fontSize={titleSize}
                           >
-                            {event.kind === "session_end" ? "Mission Complete" : "Active Trajectory"}
+                            {event.kind === "session_end" ? "Mission Complete" : levelTitle}
                           </text>
+                          {event.kind !== "session_end" && (
+                            <text
+                              x={-cardW / 2 + cardW * 0.08}
+                              y={-cardH / 2 + cardH * (isCurrent ? 0.68 : 0.78)}
+                              textAnchor="start"
+                              className="flow-view__event-card-summary"
+                              fontSize={Math.max(7, subtitleSize * 0.95)}
+                            >
+                              {(() => {
+                                const summary = getEventSummary(event);
+                                return summary.length > 48 ? `${summary.slice(0, 47)}…` : summary;
+                              })()}
+                            </text>
+                          )}
                           {isCurrent && (
                             <>
                               <text
@@ -1563,6 +1605,61 @@ export function FlowView({
                 <CurrentEventRenderer event={currentEvent} index={currentIndex} />
               </div>
             </section>
+          )}
+          {selectedTransactionIndex != null && events.length > 1 && selectedTransactionIndex < events.length - 1 && (
+            <aside className="flow-view__transaction-panel" aria-label="Transaction detail">
+              <div className="flow-view__transaction-card">
+                <div className="flow-view__panel-title">
+                  Transaction E{selectedTransactionIndex + 1} → E{selectedTransactionIndex + 2}
+                  <button
+                    type="button"
+                    className="flow-view__transaction-close"
+                    onClick={() => setSelectedTransactionIndex(null)}
+                    aria-label="Close transaction detail"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="flow-view__transaction-body">
+                  <div className="flow-view__transaction-duration">
+                    <span className="flow-view__transaction-label">Duration</span>
+                    <span className="flow-view__ops-mono">
+                      {formatDurationMs(getDurationMs(events, selectedTransactionIndex, selectedTransactionIndex + 1))}
+                    </span>
+                  </div>
+                  <div className="flow-view__transaction-row">
+                    <span className="flow-view__transaction-label">From (E{selectedTransactionIndex + 1})</span>
+                    <button
+                      type="button"
+                      className="flow-view__transaction-seek"
+                      onClick={() => onSeek(selectedTransactionIndex)}
+                    >
+                      {getEventSummary(events[selectedTransactionIndex])}
+                    </button>
+                  </div>
+                  <div className="flow-view__transaction-row">
+                    <span className="flow-view__transaction-label">To (E{selectedTransactionIndex + 2})</span>
+                    <button
+                      type="button"
+                      className="flow-view__transaction-seek"
+                      onClick={() => onSeek(selectedTransactionIndex + 1)}
+                    >
+                      {getEventSummary(events[selectedTransactionIndex + 1])}
+                    </button>
+                  </div>
+                  <div className="flow-view__transaction-meta">
+                    <div className="flow-view__ops-row">
+                      <span>From</span>
+                      <span className="flow-view__ops-mono">{formatClock(events[selectedTransactionIndex]?.ts)} · {events[selectedTransactionIndex]?.kind}</span>
+                    </div>
+                    <div className="flow-view__ops-row">
+                      <span>To</span>
+                      <span className="flow-view__ops-mono">{formatClock(events[selectedTransactionIndex + 1]?.ts)} · {events[selectedTransactionIndex + 1]?.kind}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
           )}
           <div className="flow-view__desc-panel flow-view__desc-panel--float">
             <span className="flow-view__control-desc" title={summary || undefined}>

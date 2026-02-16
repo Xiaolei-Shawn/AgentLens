@@ -90,3 +90,35 @@ details summary {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.7);
 }
+
+.event-audit--readable p {
+  margin: 0 0 0.65rem 0;
+}
+
+.event-audit--readable p:last-child {
+  margin-bottom: 0;
+}
+
+.event-audit--readable strong {
+  color: rgba(148, 163, 184, 0.95);
+  font-weight: 600;
+}
+
+.event-audit-block {
+  margin: 0.5rem 0 0.65rem 0;
+}
+
+.event-audit-block strong {
+  color: rgba(148, 163, 184, 0.95);
+  font-weight: 600;
+}
+
+.event-audit-list {
+  margin: 0.35rem 0 0 0;
+  padding-left: 1.25rem;
+}
+
+.event-audit-list li {
+  margin: 0.2rem 0;
+  line-height: 1.4;
+}

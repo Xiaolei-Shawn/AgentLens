@@ -70,10 +70,45 @@ export function CurrentEventRenderer({ event, index }: CurrentEventRendererProps
           </div>
         )}
 
-        {(event.kind === "decision" || event.kind === "assumption") && (
-          <div className="event-text event-audit">
-            <h3 className="audit-type">{event.kind}</h3>
-            <p>{JSON.stringify(event.payload, null, 2)}</p>
+        {event.kind === "decision" && (
+          <div className="event-text event-audit event-audit--readable">
+            <h3 className="audit-type">Decision</h3>
+            {getPayloadString(event, "summary") && (
+              <p><strong>Summary:</strong> {getPayloadString(event, "summary")}</p>
+            )}
+            {getPayloadString(event, "rationale") && (
+              <p><strong>Rationale:</strong> {getPayloadString(event, "rationale")}</p>
+            )}
+            {event.payload?.options != null && Array.isArray(event.payload.options) && event.payload.options.length > 0 && (
+              <div className="event-audit-block">
+                <strong>Options:</strong>
+                <ul className="event-audit-list">
+                  {(event.payload.options as string[]).map((opt, idx) => (
+                    <li key={idx}>{opt}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {getPayloadString(event, "chosen_option") && (
+              <p><strong>Chosen:</strong> {getPayloadString(event, "chosen_option")}</p>
+            )}
+            {event.payload?.reversibility != null && (
+              <p><strong>Reversibility:</strong> {String(event.payload.reversibility)}</p>
+            )}
+          </div>
+        )}
+        {event.kind === "assumption" && (
+          <div className="event-text event-audit event-audit--readable">
+            <h3 className="audit-type">Assumption</h3>
+            {getPayloadString(event, "statement") && (
+              <p><strong>Statement:</strong> {getPayloadString(event, "statement")}</p>
+            )}
+            {event.payload?.validated !== undefined && (
+              <p><strong>Validated:</strong> {typeof event.payload.validated === "boolean" ? (event.payload.validated ? "Yes" : "No") : String(event.payload.validated)}</p>
+            )}
+            {event.payload?.risk != null && (
+              <p><strong>Risk:</strong> {String(event.payload.risk)}</p>
+            )}
           </div>
         )}
 
