@@ -98,6 +98,22 @@
   font-weight: 700;
 }
 
+.flow-view__hint {
+  margin-left: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.78rem;
+  height: 0.78rem;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  color: rgba(34, 211, 238, 0.95);
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: none;
+}
+
 .flow-view__mission-items {
   margin-top: 0.4rem;
   display: grid;
@@ -279,17 +295,22 @@
 }
 
 .flow-view__event-card.is-current {
-  stroke: color-mix(in srgb, var(--intent-color) 86%, #ffffff 14%);
-  stroke-width: 2.6;
+  stroke: rgba(125, 211, 252, 0.98);
+  stroke-width: 3.2;
   fill: color-mix(in srgb, var(--intent-color) 20%, rgba(2, 12, 30, 0.78));
-  filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.62));
+  filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.58));
 }
 
-.flow-view__event-card.is-critical {
+.flow-view__event-card:focus,
+.flow-view__event-card:focus-visible {
+  outline: none;
+}
+
+.flow-view__event-card.is-critical:not(.is-current) {
   stroke: rgba(248, 113, 113, 0.88);
 }
 
-.flow-view__event-card.is-warning {
+.flow-view__event-card.is-warning:not(.is-current) {
   stroke: rgba(245, 158, 11, 0.86);
 }
 

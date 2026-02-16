@@ -71,13 +71,13 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   >(segments.length > 0 ? 0 : null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<"timeline" | "pivot" | "reviewer">("reviewer");
+  const [viewMode, setViewMode] = useState<"timeline" | "pivot">("timeline");
+  const [timelineTab, setTimelineTab] = useState<"session" | "reviewer">("session");
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWorkflowView = viewMode === "pivot";
-  const isReviewerView = viewMode === "reviewer";
   const playbackSpeed = speed;
 
   const eventCount = session.events.length;
@@ -171,7 +171,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
   return (
     <div
-      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""} ${isReviewerView ? "replay-view--reviewer" : ""}`}
+      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}
     >
       <header className="replay-header">
         <button
@@ -192,8 +192,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               </span>
               Workflow Visualizer
             </>
-          ) : isReviewerView ? (
-            "Reviewer Mode"
           ) : (
             session.title
           )}
@@ -207,14 +205,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             className={viewMode === "timeline" ? "active" : ""}
             onClick={() => setViewMode("timeline")}
           >
-            Timeline
-          </button>
-          <button
-            type="button"
-            className={viewMode === "reviewer" ? "active" : ""}
-            onClick={() => setViewMode("reviewer")}
-          >
-            Reviewer
+            Session
           </button>
           <button
             type="button"
@@ -226,7 +217,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </div>
       </header>
       <div className="replay-layout">
-        {viewMode === "timeline" && (
+        {viewMode === "timeline" && timelineTab === "session" && (
           <aside className="replay-sidebar">
             <PlanNodesPanel
               session={session}
@@ -241,16 +232,23 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </aside>
         )}
         <main className="replay-main">
-          {isReviewerView && <ReviewerHighlights normalized={normalized} reviewer={reviewer} />}
-          {isReviewerView && (
-            <ReviewerFocusPanel
-              session={session}
-              normalized={normalized}
-              reviewer={reviewer}
-              currentIndex={currentIndex}
-              onSeek={handleSeek}
-              criticalEvents={criticalEvents}
-            />
+          {viewMode === "timeline" && (
+            <div className="replay-subtabs">
+              <button
+                type="button"
+                className={timelineTab === "session" ? "active" : ""}
+                onClick={() => setTimelineTab("session")}
+              >
+                Trace
+              </button>
+              <button
+                type="button"
+                className={timelineTab === "reviewer" ? "active" : ""}
+                onClick={() => setTimelineTab("reviewer")}
+              >
+                Reviewer
+              </button>
+            </div>
           )}
           {viewMode === "pivot" && (
             <FlowView
@@ -264,7 +262,19 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           )}
           {viewMode === "timeline" && (
             <>
-              {selectedFilePath ? (
+              {timelineTab === "reviewer" ? (
+                <>
+                  <ReviewerHighlights normalized={normalized} reviewer={reviewer} />
+                  <ReviewerFocusPanel
+                    session={session}
+                    normalized={normalized}
+                    reviewer={reviewer}
+                    currentIndex={currentIndex}
+                    onSeek={handleSeek}
+                    criticalEvents={criticalEvents}
+                  />
+                </>
+              ) : selectedFilePath ? (
                 <FileEvolutionView
                   session={session}
                   path={selectedFilePath}
@@ -294,7 +304,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </main>
       </div>
       <footer className="replay-footer">
-        {viewMode === "timeline" || viewMode === "reviewer" ? (
+        {viewMode === "timeline" ? (
           <>
             <TimelineStrip
               eventCount={eventCount}

@@ -85,6 +85,35 @@
   view-transition-name: replay-main;
 }
 
+.replay-subtabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  padding: 0.2rem;
+  border: 1px solid rgba(13, 166, 242, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.replay-subtabs button {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.replay-subtabs button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.replay-subtabs button.active {
+  background: rgba(13, 166, 242, 0.3);
+  border-color: rgba(13, 166, 242, 0.58);
+}
+
 .replay-placeholder {
   padding: 2rem;
   color: rgba(255, 255, 255, 0.95);
@@ -119,10 +148,6 @@
 
 .replay-view--workflow .replay-main {
   padding: 0;
-}
-
-.replay-view--reviewer .replay-main {
-  background: radial-gradient(circle at 10% 0%, rgba(127, 29, 29, 0.18), transparent 45%);
 }
 
 .replay-title--workflow {

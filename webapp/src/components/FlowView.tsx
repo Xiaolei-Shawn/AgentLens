@@ -615,13 +615,63 @@ export function FlowView({
     if (count === 0) return 0;
     return Math.round(total / count);
   }, [events]);
+  const p95TransitionMs = useMemo(() => {
+    if (events.length < 2) return 0;
+    const durations: number[] = [];
+    for (let i = 0; i < events.length - 1; i++) {
+      const d = getDurationMs(events, i, i + 1);
+      if (d != null) durations.push(d);
+    }
+    if (durations.length === 0) return 0;
+    durations.sort((a, b) => a - b);
+    const idx = Math.min(
+      durations.length - 1,
+      Math.max(0, Math.ceil(durations.length * 0.95) - 1),
+    );
+    return Math.round(durations[idx]);
+  }, [events]);
+  const activeDurationMs = useMemo(() => {
+    if (events.length < 2) return 0;
+    const first = events[0]?.ts ? new Date(events[0].ts).getTime() : NaN;
+    const last = events[events.length - 1]?.ts ? new Date(events[events.length - 1].ts).getTime() : NaN;
+    if (!Number.isFinite(first) || !Number.isFinite(last)) return 0;
+    return Math.max(0, Math.round(last - first));
+  }, [events]);
   const verificationStats = useMemo(() => {
     const all = events.filter((e) => e.kind === "verification");
     const pass = all.filter((e) => e.payload.result === "pass").length;
     const fail = all.filter((e) => e.payload.result === "fail").length;
     const unknown = all.filter((e) => e.payload.result === "unknown").length;
-    const stability = all.length === 0 ? 70 : Math.max(0, Math.min(100, Math.round((pass / all.length) * 100)));
-    return { all: all.length, pass, fail, unknown, stability };
+    const health = all.length === 0 ? 0 : Math.max(0, Math.min(100, Math.round((pass / all.length) * 100)));
+    const intents = events.filter((e) => e.kind === "intent");
+    const intentIds = intents
+      .map((e) => {
+        const id = e.scope?.intent_id;
+        return typeof id === "string" && id ? id : null;
+      })
+      .filter((id): id is string => Boolean(id));
+    const verifiedIntentIds = new Set<string>();
+    for (const event of all) {
+      const id = event.scope?.intent_id;
+      if (typeof id === "string" && id) verifiedIntentIds.add(id);
+    }
+    const coveragePct = intentIds.length === 0
+      ? null
+      : Math.round((verifiedIntentIds.size / intentIds.length) * 100);
+    const lastVerification = all.length > 0 ? all[all.length - 1] : null;
+    return { all: all.length, pass, fail, unknown, health, coveragePct, lastVerification };
+  }, [events]);
+  const paceBars = useMemo(() => {
+    if (events.length < 2) return [20, 24, 28, 32, 36];
+    const durations: number[] = [];
+    for (let i = 0; i < events.length - 1; i++) {
+      const d = getDurationMs(events, i, i + 1);
+      if (d != null) durations.push(d);
+    }
+    const tail = durations.slice(-5);
+    if (tail.length === 0) return [20, 24, 28, 32, 36];
+    const max = Math.max(...tail, 1);
+    return tail.map((d) => Math.max(18, Math.round((d / max) * 86)));
   }, [events]);
 
   if (!layout) {
@@ -690,9 +740,12 @@ export function FlowView({
       const falloff = forward
         ? Math.exp(-depth * 0.35)
         : Math.exp(-depth * 0.16);
-      const axisDistance = forward
-        ? (1 - falloff) * (pathBounds.height * 0.86)
-        : Math.pow(depth + 0.16, 1.1) * (pathBounds.height * 0.18);
+      const axisDistanceRaw = forward
+        ? (Math.pow(depth, 0.72) * (pathBounds.height * 0.74))
+        : (Math.pow(depth, 0.86) * (pathBounds.height * 0.34));
+      const minSeparation = forward ? 84 : 62;
+      const separationFactor = 1 - Math.exp(-depth * 9);
+      const axisDistance = axisDistanceRaw + (minSeparation * separationFactor);
       const dirX = forward ? futureDirX : pastDirX;
       const dirY = forward ? futureDirY : pastDirY;
       const perpX = -dirY;
@@ -711,12 +764,18 @@ export function FlowView({
       const scale = forward
         ? Math.max(0.26, 0.18 + falloff * 0.98)
         : Math.min(1.45, 1 + depth * 0.1);
-      const opacity = forward
+      let opacity = forward
         ? Math.max(0.2, 0.25 + falloff * 0.88)
         : Math.max(0.18, 1 - depth * 0.16);
-      return { x: projX, y: projY, scale, opacity, depth, isForward: forward };
+      if (depth > 0.04 && depth < 0.35) {
+        opacity *= 0.3;
+      }
+      const isCurrent = i === currentIndex;
+      const finalScale = isCurrent ? Math.max(0.96, scale) : scale;
+      const finalOpacity = isCurrent ? 1 : opacity;
+      return { x: projX, y: projY, scale: finalScale, opacity: finalOpacity, depth, isForward: forward };
     });
-  }, [positions, pathBounds.height, pathBounds.width, shipPerspective, travelPosition]);
+  }, [currentIndex, positions, pathBounds.height, pathBounds.width, shipPerspective, travelPosition]);
 
   const CONNECTOR_INSET = 2;
 
@@ -864,7 +923,13 @@ export function FlowView({
             <button
               type="button"
               className={`flow-view__ride-btn ${rideCamera ? "is-active" : ""}`}
-              onClick={() => setRideCamera((v) => !v)}
+              onClick={() =>
+                setRideCamera((v) => {
+                  const next = !v;
+                  if (next) setShipPerspective(false);
+                  return next;
+                })
+              }
               aria-label={rideCamera ? "Disable ride camera mode" : "Enable ride camera mode"}
               title={rideCamera ? "Ride camera: on" : "Ride camera: off"}
             >
@@ -873,7 +938,13 @@ export function FlowView({
             <button
               type="button"
               className={`flow-view__ride-btn ${shipPerspective ? "is-active" : ""}`}
-              onClick={() => setShipPerspective((v) => !v)}
+              onClick={() =>
+                setShipPerspective((v) => {
+                  const next = !v;
+                  if (next) setRideCamera(false);
+                  return next;
+                })
+              }
               aria-label={shipPerspective ? "Disable ship perspective" : "Enable ship perspective"}
               title={shipPerspective ? "Ship perspective: on" : "Ship perspective: off"}
             >
@@ -1388,26 +1459,61 @@ export function FlowView({
             </div>
           </aside>}
           {shipPerspective && <aside className="flow-view__telemetry" aria-label="Telemetry">
-            <div className="flow-view__telemetry-card">
-              <div className="flow-view__panel-title">Network Latency</div>
-              <div className="flow-view__bars">
-                {Array.from({ length: 5 }).map((_, i) => {
-                  const value = Math.max(18, ((i + 2) * 17 + avgTransitionMs / 40) % 90);
-                  return <span key={i} style={{ height: `${value}%` }} />;
-                })}
+            <div
+              className="flow-view__telemetry-card"
+              title="Execution Pace summarizes how quickly the agent moved between events. Lower avg/p95 means smoother, faster progression."
+            >
+              <div className="flow-view__panel-title">
+                Execution Pace
+                <span
+                  className="flow-view__hint"
+                  role="img"
+                  aria-label="Execution Pace: average and p95 event-to-event transition durations from timestamps."
+                  title="Average and p95 transition durations computed from consecutive event timestamps."
+                >
+                  i
+                </span>
               </div>
-              <div className="flow-view__telemetry-value">{Math.max(9, Math.round(avgTransitionMs / 75))}ms</div>
+              <div className="flow-view__bars">
+                {paceBars.map((value, i) => <span key={i} style={{ height: `${value}%` }} />)}
+              </div>
+              <div
+                className="flow-view__telemetry-value"
+                title="avg: mean transition time. p95: worst-case tail latency for transitions."
+              >
+                avg {formatDurationMs(avgTransitionMs)} · p95 {formatDurationMs(p95TransitionMs)}
+              </div>
             </div>
-            <div className="flow-view__telemetry-card">
-              <div className="flow-view__panel-title">System Stability</div>
+            <div
+              className="flow-view__telemetry-card"
+              title="Verification Health summarizes trust in outputs from verification events and intent-level coverage."
+            >
+              <div className="flow-view__panel-title">
+                Verification Health
+                <span
+                  className="flow-view__hint"
+                  role="img"
+                  aria-label="Verification Health: pass rate, pass-fail-unknown counts, and intent verification coverage."
+                  title="Pass rate track, pass/fail/unknown counts, plus verified-intent coverage when intent IDs are present."
+                >
+                  i
+                </span>
+              </div>
               <div className="flow-view__stability-track">
                 <div
                   className="flow-view__stability-fill"
-                  style={{ width: `${verificationStats.stability}%` }}
+                  style={{ width: `${verificationStats.health}%` }}
                 />
               </div>
-              <div className="flow-view__telemetry-value">
-                {verificationStats.stability}% · {verificationStats.pass}p/{verificationStats.fail}f/{verificationStats.unknown}u
+              <div
+                className="flow-view__telemetry-value"
+                title="Format: pass/fail/unknown counts · verified intent coverage · active duration."
+              >
+                {verificationStats.pass}p/{verificationStats.fail}f/{verificationStats.unknown}u
+                {" · "}
+                {verificationStats.coveragePct == null ? "intent cov N/A" : `intent cov ${verificationStats.coveragePct}%`}
+                {" · "}
+                active {formatDurationMs(activeDurationMs)}
               </div>
             </div>
           </aside>}
