@@ -3,6 +3,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  handleGatewayAct,
+  handleGatewayBeginRun,
+  handleGatewayEndRun,
   handleRecordActivity,
   handleRecordAssumption,
   handleRecordDecision,
@@ -17,6 +20,33 @@ const server = new McpServer({
   name: "al-mcp-server",
   version: "0.2.0",
 });
+
+server.registerTool(
+  "gateway_begin_run",
+  {
+    description: "Gateway start: starts/reuses session and can create initial intent.",
+    inputSchema: toolSchemas.gateway_begin_run.inputSchema,
+  },
+  handleGatewayBeginRun
+);
+
+server.registerTool(
+  "gateway_act",
+  {
+    description: "Gateway action router: maps operation to semantic recorder tools/events with validation.",
+    inputSchema: toolSchemas.gateway_act.inputSchema,
+  },
+  handleGatewayAct
+);
+
+server.registerTool(
+  "gateway_end_run",
+  {
+    description: "Gateway end: closes active session with outcome/summary.",
+    inputSchema: toolSchemas.gateway_end_run.inputSchema,
+  },
+  handleGatewayEndRun
+);
 
 server.registerTool(
   "record_session_start",
@@ -85,4 +115,3 @@ const transport = new StdioServerTransport();
 server.connect(transport).then(() => {
   process.stderr.write("AL MCP server connected (stdio)\n");
 });
-

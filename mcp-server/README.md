@@ -198,6 +198,43 @@ Host connects via stdio (e.g. Cursor MCP with command `node /path/to/mcp-server/
 
 ## Tools
 
+- **gateway_begin_run** — One-call session bootstrap for low-friction agents.
+  - Input: `goal`, optional `user_prompt`, `repo`, `branch`, optional initial intent (`intent_title`, `intent_description`, `intent_priority`)
+  - Behavior: starts session if none active, or reuses active session; optionally creates initial intent.
+- **gateway_act** — One-call operation router for reliable instrumentation.
+  - Input: `op` and operation payload.
+  - Rule mapping:
+    - `op: "file" | "tool" | "search" | "execution"` -> `record_activity` semantics (`file_op` for file, `tool_call` otherwise), `action` required
+    - `op: "intent"` -> `record_intent` semantics, `intent` required
+    - `op: "decision"` -> `record_decision` semantics, `decision` required
+    - `op: "assumption"` -> `record_assumption` semantics, `assumption` required
+    - `op: "verification"` -> `record_verification` semantics, `verification` required
+  - Optional: include `verification` with file/tool/search/execution ops to append verification event in the same call.
+- **gateway_end_run** — One-call session close.
+  - Input: `outcome`, optional `summary`
+  - Behavior: closes active session; if no active session, returns a no-op response.
+
+### Recommended agent prompt (gateway-only mode)
+
+Use this at the start of a Cursor/Codex chat to minimize friction and keep tracing reliable:
+
+```text
+Use AL MCP gateway tools for all tracing in this run.
+
+Rules:
+1. Call gateway_begin_run once before any work.
+2. For every operation, call gateway_act (do not call raw record_* tools unless gateway_act cannot express the event).
+3. Map operations:
+   - file edits/creates/deletes -> gateway_act op="file"
+   - tool/search/exec actions -> gateway_act op="tool"|"search"|"execution"
+   - intent changes -> gateway_act op="intent"
+   - decision points -> gateway_act op="decision"
+   - assumptions -> gateway_act op="assumption"
+   - checks/tests/lint/typecheck/manual -> gateway_act op="verification"
+4. End exactly once with gateway_end_run.
+5. If an operation fails, still record it with gateway_act details and continue safely.
+```
+
 - **health** — No args. Returns status and timestamp.
 - **record_session_start** — `session_id`, `title`, `user_message`; optional `started_at`.
 - **record_plan_step** — `session_id`, `step`; optional `index`, `at`.

@@ -6,6 +6,7 @@ import {
   createEvent,
   createSession,
   endActiveSession,
+  getActiveSession,
   ensureActiveSession,
   initializeSessionLog,
   persistEvent,
@@ -77,6 +78,94 @@ const sessionEndSchema = z
     summary: z.string().optional(),
   })
   .strict();
+
+const gatewayBeginSchema = z
+  .object({
+    goal: z.string().min(1),
+    user_prompt: z.string().min(1).optional(),
+    repo: z.string().min(1).optional(),
+    branch: z.string().min(1).optional(),
+    intent_title: z.string().min(1).optional(),
+    intent_description: z.string().min(1).optional(),
+    intent_priority: z.number().optional(),
+  })
+  .strict();
+
+const gatewayActSchema = z
+  .object({
+    op: z.enum([
+      "file",
+      "tool",
+      "search",
+      "execution",
+      "intent",
+      "decision",
+      "assumption",
+      "verification",
+    ]),
+    action: z.string().min(1).optional(),
+    target: z.string().min(1).optional(),
+    details: z.record(z.unknown()).optional(),
+    intent: intentSchema.optional(),
+    decision: decisionSchema.optional(),
+    assumption: assumptionSchema.optional(),
+    verification: verificationSchema.optional(),
+    visibility: z.enum(["raw", "review", "debug"]).optional(),
+  })
+  .strict();
+
+const gatewayEndSchema = sessionEndSchema;
+
+export const GATEWAY_RULES = {
+  file: {
+    maps_to_tool: "record_activity",
+    emits_kind: "file_op",
+    required_fields: ["action"] as const,
+    default_visibility: "raw" as const,
+  },
+  tool: {
+    maps_to_tool: "record_activity",
+    emits_kind: "tool_call",
+    required_fields: ["action"] as const,
+    default_visibility: "raw" as const,
+  },
+  search: {
+    maps_to_tool: "record_activity",
+    emits_kind: "tool_call",
+    required_fields: ["action"] as const,
+    default_visibility: "raw" as const,
+  },
+  execution: {
+    maps_to_tool: "record_activity",
+    emits_kind: "tool_call",
+    required_fields: ["action"] as const,
+    default_visibility: "raw" as const,
+  },
+  intent: {
+    maps_to_tool: "record_intent",
+    emits_kind: "intent",
+    required_fields: ["intent.title"] as const,
+    default_visibility: "review" as const,
+  },
+  decision: {
+    maps_to_tool: "record_decision",
+    emits_kind: "decision",
+    required_fields: ["decision.summary"] as const,
+    default_visibility: "review" as const,
+  },
+  assumption: {
+    maps_to_tool: "record_assumption",
+    emits_kind: "assumption",
+    required_fields: ["assumption.statement"] as const,
+    default_visibility: "review" as const,
+  },
+  verification: {
+    maps_to_tool: "record_verification",
+    emits_kind: "verification",
+    required_fields: ["verification.type", "verification.result"] as const,
+    default_visibility: "review" as const,
+  },
+} as const;
 
 function textContent(value: unknown): ToolResponse {
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -319,6 +408,238 @@ export async function handleRecordSessionEnd(
   }
 }
 
+function createIntentId(): string {
+  return `intent_${Date.now()}_${randomUUID().slice(0, 8)}`;
+}
+
+async function appendIntentEvent(input: z.infer<typeof intentSchema>): Promise<{ event: CanonicalEvent; intent_id: string }> {
+  const intentId = createIntentId();
+  setActiveIntent(intentId);
+  const event = await appendCurrentSessionEvent({
+    kind: "intent",
+    payload: {
+      intent_id: intentId,
+      title: input.title,
+      description: input.description,
+      priority: input.priority,
+    },
+    scope: { intent_id: intentId },
+    visibility: "review",
+  });
+  return { event, intent_id: intentId };
+}
+
+export async function handleGatewayBeginRun(
+  raw: z.infer<typeof gatewayBeginSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = gatewayBeginSchema.parse(raw);
+    let active = getActiveSession();
+    let sessionStartEvent: CanonicalEvent | null = null;
+    let reusedSession = false;
+
+    if (!active || active.ended_at) {
+      active = createSession({
+        goal: args.goal,
+        user_prompt: args.user_prompt,
+        repo: args.repo,
+        branch: args.branch,
+      });
+      initializeSessionLog(active);
+      sessionStartEvent = createEvent(active, {
+        session_id: active.session_id,
+        kind: "session_start",
+        actor,
+        payload: {
+          goal: args.goal,
+          user_prompt: args.user_prompt,
+          repo: args.repo,
+          branch: args.branch,
+        },
+        visibility: "review",
+      });
+      await persistEvent(sessionStartEvent);
+    } else {
+      reusedSession = true;
+    }
+
+    let intent: { event: CanonicalEvent; intent_id: string } | null = null;
+    if (args.intent_title) {
+      intent = await appendIntentEvent({
+        title: args.intent_title,
+        description: args.intent_description,
+        priority: args.intent_priority,
+      });
+    }
+
+    return textContent({
+      session_id: active.session_id,
+      reused_session: reusedSession,
+      start_event_id: sessionStartEvent?.id ?? null,
+      start_seq: sessionStartEvent?.seq ?? null,
+      intent_id: intent?.intent_id ?? active.active_intent_id ?? null,
+      intent_event_id: intent?.event.id ?? null,
+      rule_hint: "Use gateway_act for all subsequent operations.",
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): Promise<ToolResponse> {
+  try {
+    const args = gatewayActSchema.parse(raw);
+    const state = ensureActiveSession();
+    const rule = GATEWAY_RULES[args.op];
+    const visibility = args.visibility ?? rule.default_visibility;
+
+    if (args.op === "intent") {
+      if (!args.intent) throw new Error("op=intent requires `intent` payload.");
+      const intent = await appendIntentEvent(args.intent);
+      return textContent({
+        mapped_tool: rule.maps_to_tool,
+        event_id: intent.event.id,
+        kind: intent.event.kind,
+        seq: intent.event.seq,
+        ts: intent.event.ts,
+        intent_id: intent.intent_id,
+      });
+    }
+
+    if (args.op === "decision") {
+      if (!args.decision) throw new Error("op=decision requires `decision` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "decision",
+        payload: {
+          summary: args.decision.summary,
+          rationale: args.decision.rationale,
+          options: args.decision.options,
+          chosen_option: args.decision.chosen_option,
+          reversibility: args.decision.reversibility,
+        },
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({
+        mapped_tool: rule.maps_to_tool,
+        event_id: event.id,
+        kind: event.kind,
+        seq: event.seq,
+        ts: event.ts,
+      });
+    }
+
+    if (args.op === "assumption") {
+      if (!args.assumption) throw new Error("op=assumption requires `assumption` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "assumption",
+        payload: {
+          statement: args.assumption.statement,
+          validated: args.assumption.validated ?? "unknown",
+          risk: args.assumption.risk,
+        },
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({
+        mapped_tool: rule.maps_to_tool,
+        event_id: event.id,
+        kind: event.kind,
+        seq: event.seq,
+        ts: event.ts,
+      });
+    }
+
+    if (args.op === "verification") {
+      if (!args.verification) throw new Error("op=verification requires `verification` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "verification",
+        payload: {
+          type: args.verification.type,
+          result: args.verification.result,
+          details: args.verification.details,
+        },
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({
+        mapped_tool: rule.maps_to_tool,
+        event_id: event.id,
+        kind: event.kind,
+        seq: event.seq,
+        ts: event.ts,
+      });
+    }
+
+    if (!args.action) {
+      throw new Error(`op=${args.op} requires 'action'.`);
+    }
+
+    const kind = args.op === "file" ? "file_op" : "tool_call";
+    const scope = {
+      intent_id: state.active_intent_id,
+      file: args.op === "file" ? args.target : undefined,
+      module:
+        args.details && typeof args.details.module === "string"
+          ? (args.details.module as string)
+          : undefined,
+    };
+    const event = await appendCurrentSessionEvent({
+      kind,
+      payload: {
+        category: args.op,
+        action: args.action,
+        target: args.target,
+        details: args.details ?? {},
+      },
+      scope,
+      visibility,
+    });
+
+    let verificationEvent: CanonicalEvent | null = null;
+    if (args.verification) {
+      verificationEvent = await appendCurrentSessionEvent({
+        kind: "verification",
+        payload: {
+          type: args.verification.type,
+          result: args.verification.result,
+          details: args.verification.details,
+        },
+        scope: { intent_id: state.active_intent_id },
+        visibility: "review",
+      });
+    }
+
+    return textContent({
+      mapped_tool: rule.maps_to_tool,
+      event_id: event.id,
+      kind: event.kind,
+      seq: event.seq,
+      ts: event.ts,
+      verification_event_id: verificationEvent?.id ?? null,
+    });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleGatewayEndRun(
+  raw: z.infer<typeof gatewayEndSchema>
+): Promise<ToolResponse> {
+  try {
+    const active = getActiveSession();
+    if (!active || active.ended_at) {
+      return textContent({
+        ended: false,
+        reason: "No active session to close.",
+      });
+    }
+    return handleRecordSessionEnd(gatewayEndSchema.parse(raw));
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
 export const toolSchemas = {
   record_session_start: { inputSchema: sessionStartSchema.shape },
   record_intent: { inputSchema: intentSchema.shape },
@@ -327,6 +648,9 @@ export const toolSchemas = {
   record_assumption: { inputSchema: assumptionSchema.shape },
   record_verification: { inputSchema: verificationSchema.shape },
   record_session_end: { inputSchema: sessionEndSchema.shape },
+  gateway_begin_run: { inputSchema: gatewayBeginSchema.shape },
+  gateway_act: { inputSchema: gatewayActSchema.shape },
+  gateway_end_run: { inputSchema: gatewayEndSchema.shape },
 } as const;
 
 export const EVENT_EXAMPLES = {
@@ -451,6 +775,7 @@ export const EVENT_EXAMPLES = {
 } as const;
 
 export const AGENT_INSTRUCTIONS = [
+  "Preferred low-friction path: call gateway_begin_run once, gateway_act for every operation, then gateway_end_run once.",
   "Call record_session_start once before any other tool.",
   "Call record_intent whenever objective shifts; use one intent per cohesive chunk.",
   "Use record_activity for every meaningful file/tool/search/execution step.",
