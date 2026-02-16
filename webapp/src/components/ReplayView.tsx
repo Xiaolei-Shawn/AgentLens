@@ -209,10 +209,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </button>
           <button
             type="button"
-            className={viewMode === "pivot" ? "active" : ""}
+            className={`replay-view-toggle__pivot ${viewMode === "pivot" ? "active" : ""}`}
             onClick={() => setViewMode("pivot")}
+            title="Pivot: immersive mission flow"
           >
-            Pivot
+            Pivot ★
           </button>
         </div>
       </header>

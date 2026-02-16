@@ -515,7 +515,7 @@ export function FlowView({
   }, [currentIndex, isPlaying, shipPerspective, travelPosition]);
 
   useEffect(() => {
-    if (!rideCamera || !layout) return;
+    if (!rideCamera || !layout || !isPlaying) return;
     if (shipPerspective) {
       setPan({ x: 0, y: 0 });
       setZoom(1);
@@ -546,6 +546,7 @@ export function FlowView({
     currentIndex,
     isPlaying,
     layout,
+    isPlaying,
     pathBounds.height,
     pathBounds.width,
     rideCamera,
