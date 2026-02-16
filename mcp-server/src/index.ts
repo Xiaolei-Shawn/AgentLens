@@ -2,6 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { startDashboardServer } from "./dashboard.js";
 import {
   handleGatewayAct,
   handleGatewayBeginRun,
@@ -20,6 +21,8 @@ const server = new McpServer({
   name: "al-mcp-server",
   version: "0.2.0",
 });
+
+startDashboardServer();
 
 server.registerTool(
   "gateway_begin_run",

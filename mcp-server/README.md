@@ -193,8 +193,35 @@ Host connects via stdio (e.g. Cursor MCP with command `node /path/to/mcp-server/
 |-----|---------|-------------|
 | `AL_SESSIONS_DIR` | `./sessions` | Where to write session JSON files. |
 | `AL_WORKSPACE_ROOT` | `process.cwd()` | Project root for **file_op**; paths are resolved and validated against this. Required for recording middleware. |
+| `AL_DASHBOARD_ENABLED` | `true` | Enable local web dashboard server (`false` to disable). |
+| `AL_DASHBOARD_HOST` | `127.0.0.1` | Host interface for local dashboard. |
+| `AL_DASHBOARD_PORT` | `4317` | Port for local dashboard + API. |
+| `AL_DASHBOARD_WEBAPP_DIR` | `../webapp/dist` (auto) | Path to built webapp assets served by MCP server. |
 | `AL_WATCHER_ENABLED` | — | Set to `1` or `true` to enable folder watcher. |
 | `AL_WATCHER_DIR` | `./watcher-events` | Directory to watch for event fragment JSON files. |
+
+## Local dashboard (served by MCP server)
+
+The MCP server now also runs a local-only HTTP dashboard. Data stays on your machine:
+
+- Browser is only a viewer.
+- Session source is local files under `AL_SESSIONS_DIR`.
+- API and static UI are served by the same process.
+
+### Endpoints
+
+- `GET /api/health`
+- `GET /api/sessions`
+- `GET /api/sessions/:key`
+
+### Start
+
+```bash
+cd /path/to/AL/webapp && npm run build
+cd /path/to/AL/mcp-server && npm run build && node dist/index.js
+```
+
+Then open: `http://127.0.0.1:4317`
 
 ## Tools
 
@@ -203,6 +230,12 @@ Host connects via stdio (e.g. Cursor MCP with command `node /path/to/mcp-server/
   - Behavior: starts session if none active, or reuses active session; optionally creates initial intent.
 - **gateway_act** — One-call operation router for reliable instrumentation.
   - Input: `op` and operation payload.
+  - Optional usage telemetry per action:
+    - `usage.model`
+    - `usage.prompt_tokens`
+    - `usage.completion_tokens`
+    - `usage.total_tokens`
+    - `usage.estimated_cost_usd`
   - Rule mapping:
     - `op: "file" | "tool" | "search" | "execution"` -> `record_activity` semantics (`file_op` for file, `tool_call` otherwise), `action` required
     - `op: "intent"` -> `record_intent` semantics, `intent` required

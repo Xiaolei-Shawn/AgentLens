@@ -106,6 +106,16 @@ const gatewayActSchema = z
     action: z.string().min(1).optional(),
     target: z.string().min(1).optional(),
     details: z.record(z.unknown()).optional(),
+    usage: z
+      .object({
+        model: z.string().min(1).optional(),
+        prompt_tokens: z.number().int().nonnegative().optional(),
+        completion_tokens: z.number().int().nonnegative().optional(),
+        total_tokens: z.number().int().nonnegative().optional(),
+        estimated_cost_usd: z.number().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
     intent: intentSchema.optional(),
     decision: decisionSchema.optional(),
     assumption: assumptionSchema.optional(),
@@ -492,6 +502,15 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
     const state = ensureActiveSession();
     const rule = GATEWAY_RULES[args.op];
     const visibility = args.visibility ?? rule.default_visibility;
+    const usagePayload = args.usage
+      ? {
+          model: args.usage.model,
+          prompt_tokens: args.usage.prompt_tokens,
+          completion_tokens: args.usage.completion_tokens,
+          total_tokens: args.usage.total_tokens,
+          estimated_cost_usd: args.usage.estimated_cost_usd,
+        }
+      : undefined;
 
     if (args.op === "intent") {
       if (!args.intent) throw new Error("op=intent requires `intent` payload.");
@@ -516,6 +535,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
           options: args.decision.options,
           chosen_option: args.decision.chosen_option,
           reversibility: args.decision.reversibility,
+          usage: usagePayload,
         },
         scope: { intent_id: state.active_intent_id },
         visibility,
@@ -537,6 +557,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
           statement: args.assumption.statement,
           validated: args.assumption.validated ?? "unknown",
           risk: args.assumption.risk,
+          usage: usagePayload,
         },
         scope: { intent_id: state.active_intent_id },
         visibility,
@@ -558,6 +579,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
           type: args.verification.type,
           result: args.verification.result,
           details: args.verification.details,
+          usage: usagePayload,
         },
         scope: { intent_id: state.active_intent_id },
         visibility,
@@ -591,6 +613,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
         action: args.action,
         target: args.target,
         details: args.details ?? {},
+        usage: usagePayload,
       },
       scope,
       visibility,
@@ -604,6 +627,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
           type: args.verification.type,
           result: args.verification.result,
           details: args.verification.details,
+          usage: usagePayload,
         },
         scope: { intent_id: state.active_intent_id },
         visibility: "review",
@@ -617,6 +641,7 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
       seq: event.seq,
       ts: event.ts,
       verification_event_id: verificationEvent?.id ?? null,
+      usage: usagePayload ?? null,
     });
   } catch (err) {
     return errorContent(err);
