@@ -103,7 +103,12 @@ function parseInput(data: unknown): Session {
     const rawText = data.trim();
     if (!rawText) throw new Error("Empty input");
     if (rawText.startsWith("{") || rawText.startsWith("[")) {
-      return parseInput(JSON.parse(rawText));
+      try {
+        return parseInput(JSON.parse(rawText));
+      } catch {
+        // JSONL commonly starts with "{" on the first line; fallback when full JSON parse fails.
+        return toSessionFromEvents(parseJsonl(rawText));
+      }
     }
     return toSessionFromEvents(parseJsonl(rawText));
   }
@@ -134,4 +139,3 @@ export function validateSession(data: unknown): ValidateSessionResult {
     return toError(err instanceof Error ? err.message : "Invalid session input");
   }
 }
-
