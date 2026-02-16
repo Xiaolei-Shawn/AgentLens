@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
-import type { CanonicalEvent } from "@al/schema/event-envelope";
+import type { CanonicalEvent } from "./event-envelope.js";
 import {
   getDashboardHost,
   getDashboardPort,

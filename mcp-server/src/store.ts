@@ -7,7 +7,7 @@ import {
   type ActorType,
   type CanonicalEvent,
   type SessionLogFile,
-} from "@al/schema/event-envelope";
+} from "./event-envelope.js";
 
 export interface SessionState {
   session_id: string;

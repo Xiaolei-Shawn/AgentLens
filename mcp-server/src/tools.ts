@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import * as z from "zod";
-import type { CanonicalEvent } from "@al/schema/event-envelope";
+import type { CanonicalEvent } from "./event-envelope.js";
 import {
   buildSessionLog,
   createEvent,

@@ -1,25 +1,55 @@
 {
   "name": "@al/mcp-server",
-  "version": "0.1.0",
-  "description": "AL MCP server — event ingestion, session assembly, flush, list_sessions, folder watcher",
+  "version": "0.2.0",
+  "description": "Local-first MCP server for AI agent session auditing, with embedded dashboard.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "bin": {
     "al-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js"
+    "dev": "tsc && node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@al/schema": "file:../schema",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "audit",
+    "agent",
+    "local-first",
+    "observability"
+  ],
+  "author": "AL Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/AL.git",
+    "directory": "mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/AL/issues"
+  },
+  "homepage": "https://github.com/your-org/AL/tree/main/mcp-server#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=18"
