@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { flushSync } from "react-dom";
 import type { Session } from "../types/session";
 import { getSegments } from "../lib/segments";
 import { getRevisionIndexForEvent } from "../lib/fileEvolution";
@@ -11,7 +10,6 @@ import { FileEvolutionView } from "./FileEvolutionView";
 import { TimelineStrip } from "./TimelineStrip";
 import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
-import { NodeView } from "./NodeView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 
@@ -74,11 +72,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
   const [viewMode, setViewMode] = useState<"timeline" | "pivot" | "reviewer">("reviewer");
-  /** When in Pivot, show either flow (graph) or node (detail). Switched via "Open in Node/Flow View" buttons. */
-  const [pivotSubView, setPivotSubView] = useState<"flow" | "node">("flow");
-  const [flowViewFocusIndex, setFlowViewFocusIndex] = useState<
-    number | null
-  >(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,18 +169,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       ? segments[selectedSegmentIndex]
       : null;
 
-  const withViewTransition = useCallback((fn: () => void) => {
-    const doc = typeof document !== "undefined" ? document : null;
-    if (doc && "startViewTransition" in doc) {
-      (doc as Document & { startViewTransition: (cb: () => void | Promise<void>) => void })
-        .startViewTransition(() => {
-          flushSync(fn);
-        });
-    } else {
-      fn();
-    }
-  }, []);
-
   return (
     <div
       className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""} ${isReviewerView ? "replay-view--reviewer" : ""}`}
@@ -271,7 +252,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               criticalEvents={criticalEvents}
             />
           )}
-          {viewMode === "pivot" && pivotSubView === "flow" && (
+          {viewMode === "pivot" && (
             <FlowView
               session={session}
               currentIndex={currentIndex}
@@ -279,24 +260,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               isPlaying={isPlaying}
               onPlay={handlePlay}
               onPause={handlePause}
-              onOpenInNodeView={() =>
-                withViewTransition(() => setPivotSubView("node"))
-              }
-              focusNodeIndex={flowViewFocusIndex}
-              onFocusComplete={() => setFlowViewFocusIndex(null)}
-            />
-          )}
-          {viewMode === "pivot" && pivotSubView === "node" && (
-            <NodeView
-              session={session}
-              currentIndex={currentIndex}
-              onSeek={handleSeek}
-              onOpenInFlowView={() =>
-                withViewTransition(() => {
-                  setFlowViewFocusIndex(currentIndex);
-                  setPivotSubView("flow");
-                })
-              }
             />
           )}
           {viewMode === "timeline" && (

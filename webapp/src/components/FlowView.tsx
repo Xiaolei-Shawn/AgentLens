@@ -11,7 +11,9 @@ import {
   getDurationMs,
   formatDurationMs,
   getEventSummary,
+  formatEventLogLine,
 } from "../lib/workflowHelpers";
+import { CurrentEventRenderer } from "./CurrentEventRenderer";
 
 import "./FlowView.css";
 
@@ -76,6 +78,7 @@ const NODE_BOX_WIDTH = 44;
 const NODE_BOX_HEIGHT = 36;
 const NODE_BOX_RX = 8;
 const LABEL_FONT_SIZE = 12;
+const BAR_WINDOW_SIZE = 20;
 
 type GridLayout = {
   width: number;
@@ -580,6 +583,19 @@ export function FlowView({
 
   const currentEvent = events[currentIndex];
   const summary = currentEvent ? getEventSummary(currentEvent) : "";
+  const currentTimestamp = currentEvent?.ts || "—";
+  const currentNodeId = currentEvent ? `EVT_${currentIndex}_${currentEvent.kind.toUpperCase()}` : "—";
+  const logsTail = useMemo(() => {
+    const start = Math.max(0, currentIndex - 1);
+    return events.slice(start, currentIndex + 2).map((event, offset) => {
+      const idx = start + offset;
+      return {
+        index: idx,
+        line: formatEventLogLine(event, idx),
+        isCurrent: idx === currentIndex,
+      };
+    });
+  }, [currentIndex, events]);
   const upcomingCritical = criticalIndices.filter((i) => i >= currentIndex).slice(0, 4);
   const cinematicZoom = shipPerspective ? 1 : zoom * (1 + travelFx * 0.14);
   const cinematicPanX = shipPerspective ? 0 : (-pan.x * zoom - (travelFx * 16));
@@ -741,6 +757,15 @@ export function FlowView({
       return a - b;
     });
   }, [currentIndex, events, projected, shipPerspective]);
+  const navWindowSize = Math.min(BAR_WINDOW_SIZE, events.length);
+  const navWindowStart =
+    events.length <= BAR_WINDOW_SIZE
+      ? 0
+      : Math.max(
+          0,
+          Math.min(currentIndex - Math.floor(navWindowSize / 2), events.length - navWindowSize),
+        );
+  const navDisplayIndices = Array.from({ length: navWindowSize }, (_, i) => navWindowStart + i);
 
   const handleOpenInNodeView = useCallback(() => {
     const idx = Math.max(0, Math.min(currentIndex, positions.length - 1));
@@ -1069,11 +1094,21 @@ export function FlowView({
                   const station = `Station ${String(i + 1).padStart(2, "0")}`;
                   const level = `Level: ${event.kind}`;
                   const cardW = Math.max(112, 290 * p.scale);
-                  const cardH = Math.max(52, 118 * p.scale);
+                  const cardH = Math.max(44, (shipPerspective && isCurrent ? 132 : 92) * p.scale);
                   const subtitleSize = Math.max(7, 11 * p.scale);
                   const titleSize = Math.max(10, 24 * p.scale);
-                  const summarySize = Math.max(8, 13 * p.scale);
-                  const cardSummary = getEventSummary(event);
+                  const navLabelSize = Math.max(7, 10 * p.scale);
+                  const navBarY = -cardH / 2 + cardH * 0.82;
+                  const navStartX = -cardW / 2 + cardW * 0.08;
+                  const navTrackW = cardW * 0.84;
+                  const navGap = Math.max(1.5, 2 * p.scale);
+                  const navSegW = navWindowSize > 0
+                    ? Math.max(3, (navTrackW - navGap * (navWindowSize - 1)) / navWindowSize)
+                    : navTrackW;
+                  const navWindowHint =
+                    events.length > BAR_WINDOW_SIZE
+                      ? ` (${navWindowStart + 1}-${navWindowStart + navWindowSize})`
+                      : "";
 
                   return (
                     <g
@@ -1115,22 +1150,59 @@ export function FlowView({
                           </text>
                           <text
                             x={-cardW / 2 + cardW * 0.08}
-                            y={-cardH / 2 + cardH * 0.56}
+                            y={-cardH / 2 + cardH * (isCurrent ? 0.5 : 0.62)}
                             textAnchor="start"
                             className="flow-view__event-card-title"
                             fontSize={titleSize}
                           >
                             {event.kind === "session_end" ? "Mission Complete" : "Active Trajectory"}
                           </text>
-                          <text
-                            x={-cardW / 2 + cardW * 0.08}
-                            y={-cardH / 2 + cardH * 0.8}
-                            textAnchor="start"
-                            className="flow-view__event-card-summary"
-                            fontSize={summarySize}
-                          >
-                            {cardSummary.length > 60 ? `${cardSummary.slice(0, 57)}...` : cardSummary}
-                          </text>
+                          {isCurrent && (
+                            <>
+                              <text
+                                x={navStartX}
+                                y={-cardH / 2 + cardH * 0.69}
+                                textAnchor="start"
+                                className="flow-view__event-card-subtitle"
+                                fontSize={navLabelSize}
+                              >
+                                {`${i + 1} / ${events.length}${navWindowHint}`}
+                              </text>
+                              {navDisplayIndices.map((segIndex, segOffset) => {
+                                const x = navStartX + segOffset * (navSegW + navGap);
+                                const isNavCurrent = segIndex === i;
+                                return (
+                                  <rect
+                                    key={`nav-${segIndex}`}
+                                    x={x}
+                                    y={navBarY}
+                                    width={navSegW}
+                                    height={Math.max(4.5, 6 * p.scale)}
+                                    rx={Math.max(1.6, 2.2 * p.scale)}
+                                    ry={Math.max(1.6, 2.2 * p.scale)}
+                                    fill={isNavCurrent ? "rgba(34,211,238,0.98)" : "rgba(148,163,184,0.52)"}
+                                    stroke={isNavCurrent ? "rgba(186,230,253,0.95)" : "rgba(148,163,184,0.2)"}
+                                    strokeWidth={isNavCurrent ? Math.max(0.8, 1.1 * p.scale) : Math.max(0.4, 0.7 * p.scale)}
+                                    style={{ cursor: "pointer" }}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`Go to event ${segIndex + 1}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSeek(segIndex);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onSeek(segIndex);
+                                      }
+                                    }}
+                                  />
+                                );
+                              })}
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
@@ -1339,6 +1411,52 @@ export function FlowView({
               </div>
             </div>
           </aside>}
+          {shipPerspective && currentEvent && (
+            <aside className="flow-view__ops-panels" aria-label="Execution panels">
+              <div className="flow-view__ops-card">
+                <div className="flow-view__panel-title">Execution Metadata</div>
+                <div className="flow-view__ops-list">
+                  <div className="flow-view__ops-row">
+                    <span>Timestamp</span>
+                    <span className="flow-view__ops-mono">{currentTimestamp}</span>
+                  </div>
+                  <div className="flow-view__ops-row">
+                    <span>Session ID</span>
+                    <span className="flow-view__ops-mono" title={session.id}>{session.id.slice(0, 12)}…</span>
+                  </div>
+                  <div className="flow-view__ops-row">
+                    <span>Node ID</span>
+                    <span className="flow-view__ops-mono">{currentNodeId}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flow-view__ops-card">
+                <div className="flow-view__panel-title">Config</div>
+                <div className="flow-view__ops-config">{currentEvent.kind}</div>
+              </div>
+              <div className="flow-view__ops-card flow-view__ops-card--logs">
+                <div className="flow-view__panel-title">Logs</div>
+                <div className="flow-view__ops-logs">
+                  {logsTail.map((log) => (
+                    <div
+                      key={log.index}
+                      className={`flow-view__ops-log-line ${log.isCurrent ? "is-current" : ""}`}
+                    >
+                      {log.line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </aside>
+          )}
+          {shipPerspective && currentEvent && (
+            <section className="flow-view__event-detail-panel" aria-label="Event detail">
+              <div className="flow-view__panel-title">Event Detail</div>
+              <div className="flow-view__event-detail-body">
+                <CurrentEventRenderer event={currentEvent} index={currentIndex} />
+              </div>
+            </section>
+          )}
           <div className="flow-view__desc-panel flow-view__desc-panel--float">
             <span className="flow-view__control-desc" title={summary || undefined}>
               Event {currentIndex + 1} of {events.length}

@@ -5,11 +5,9 @@ import {
   getNodeKind,
   getIconPath,
   getEventShortLabel,
-  formatEventLogLine,
   getDurationMs,
   formatDurationMs,
 } from "../lib/workflowHelpers";
-import { CurrentEventRenderer } from "./CurrentEventRenderer";
 
 import "./NodeView.css";
 
@@ -167,76 +165,6 @@ function ConnectorSegment({
   );
 }
 
-function MetadataPanel({
-  event,
-  index,
-  sessionId,
-}: {
-  event: SessionEvent;
-  index: number;
-  sessionId: string;
-}) {
-  const timestamp = event.ts || "—";
-  const nodeId = `EVT_${index}_${event.kind.toUpperCase()}`;
-
-  return (
-    <div className="node-view__panel node-view__panel--meta">
-      <h4 className="node-view__panel-title">EXECUTION METADATA</h4>
-      <div className="node-view__meta-list">
-        <div className="node-view__meta-row">
-          <span className="node-view__meta-label">Timestamp</span>
-          <span className="node-view__meta-value node-view__meta-value--mono">
-            {timestamp}
-          </span>
-        </div>
-        <div className="node-view__meta-row">
-          <span className="node-view__meta-label">Session ID</span>
-          <span
-            className="node-view__meta-value node-view__meta-value--mono"
-            title={sessionId}
-          >
-            {sessionId.slice(0, 12)}…
-          </span>
-        </div>
-        <div className="node-view__meta-row">
-          <span className="node-view__meta-label">Node ID</span>
-          <span className="node-view__meta-value node-view__meta-value--mono">
-            {nodeId}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LogsPanel({
-  events,
-  currentIndex,
-}: {
-  events: SessionEvent[];
-  currentIndex: number;
-}) {
-  const tail = events.slice(Math.max(0, currentIndex - 1), currentIndex + 2);
-  return (
-    <div className="node-view__panel node-view__panel--logs">
-      <h4 className="node-view__panel-title">LOGS</h4>
-      <div className="node-view__logs-box">
-        {tail.map((e, i) => {
-          const idx = Math.max(0, currentIndex - 1) + i;
-          return (
-            <div
-              key={idx}
-              className={`node-view__log-line ${idx === currentIndex ? "node-view__log--current" : ""}`}
-            >
-              {formatEventLogLine(e, idx)}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function NodeView({
   session,
   currentIndex,
@@ -245,7 +173,6 @@ export function NodeView({
 }: NodeViewProps) {
   const events = session.events;
   const lastIndex = events.length - 1;
-  const current = events[currentIndex];
   const containerRef = useRef<HTMLDivElement>(null);
   const [stripStyle, setStripStyle] = useState<{
     width: number;
@@ -382,29 +309,6 @@ export function NodeView({
           >
             <span aria-hidden>›</span>
           </button>
-        </div>
-      </div>
-
-      {/* Compact detail: single row, smaller panels */}
-      <div className="node-view__detail">
-        <MetadataPanel
-          event={current}
-          index={currentIndex}
-          sessionId={session.id}
-        />
-        <div className="node-view__panel node-view__panel--config">
-          <h4 className="node-view__panel-title">CONFIG</h4>
-          <div className="node-view__config-list">
-            <span className="node-view__meta-value">{current.kind}</span>
-          </div>
-        </div>
-        <LogsPanel events={events} currentIndex={currentIndex} />
-      </div>
-
-      <div className="node-view__expand">
-        <h4 className="node-view__panel-title">EVENT DETAIL</h4>
-        <div className="node-view__expand-body">
-          <CurrentEventRenderer event={current} index={currentIndex} />
         </div>
       </div>
     </div>
