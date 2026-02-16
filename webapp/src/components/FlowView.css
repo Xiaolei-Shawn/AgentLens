@@ -4,6 +4,7 @@
   --flow-bg: #101c22;
   --flow-text: rgba(255, 255, 255, 0.95);
   --flow-muted: rgba(255, 255, 255, 0.5);
+  --intent-color: #38bdf8;
   display: flex;
   flex-direction: row;
   gap: 1rem;
@@ -32,6 +33,124 @@
   min-height: 320px;
   position: relative;
   min-width: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background:
+    radial-gradient(circle at 8% 15%, rgba(56, 189, 248, 0.15), transparent 40%),
+    radial-gradient(circle at 92% 85%, rgba(16, 185, 129, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.96));
+}
+
+.flow-view__space-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 24% 72%, rgba(186, 230, 253, 0.48), transparent),
+    radial-gradient(1.4px 1.4px at 68% 26%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 82% 78%, rgba(125, 211, 252, 0.45), transparent),
+    radial-gradient(1.2px 1.2px at 94% 44%, rgba(224, 242, 254, 0.5), transparent);
+  background-size: 220px 220px;
+  opacity: 0.35;
+  transition: transform 240ms ease-out;
+}
+
+.flow-view__space-layer.is-traveling {
+  opacity: 0.55;
+}
+
+.flow-view__warp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.2) 24%, transparent 40%, rgba(34, 211, 238, 0.22) 58%, transparent 78%),
+    radial-gradient(circle at 50% 50%, transparent 0%, rgba(15, 23, 42, 0.12) 58%, rgba(2, 6, 23, 0.5) 100%);
+  mix-blend-mode: screen;
+}
+
+.flow-view__warp-overlay.is-active {
+  animation: flow-warp-sweep 0.5s ease-out;
+}
+
+.flow-view__mission-log {
+  position: absolute;
+  left: 0.8rem;
+  top: 5.2rem;
+  z-index: 2;
+  width: min(17rem, calc(100% - 2rem));
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(2, 12, 30, 0.58);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.55rem;
+}
+
+.flow-view__panel-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(103, 232, 249, 0.92);
+  font-weight: 700;
+}
+
+.flow-view__mission-items {
+  margin-top: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.flow-view__mission-item {
+  display: grid;
+  grid-template-columns: 0.62rem 1fr;
+  gap: 0.42rem;
+  align-items: start;
+  padding: 0.35rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.95);
+  text-align: left;
+  cursor: pointer;
+}
+
+.flow-view__mission-item.is-current {
+  border-color: rgba(56, 189, 248, 0.66);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.flow-view__mission-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #22d3ee;
+  box-shadow: 0 0 0.4rem rgba(34, 211, 238, 0.75);
+  margin-top: 0.2rem;
+}
+
+.flow-view__mission-time {
+  font-size: 0.61rem;
+  color: rgba(34, 211, 238, 0.9);
+}
+
+.flow-view__mission-head {
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin-top: 0.1rem;
+}
+
+.flow-view__mission-detail {
+  margin-top: 0.12rem;
+  font-size: 0.65rem;
+  color: rgba(148, 163, 184, 0.88);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Canvas: pan and zoom (infinite canvas) */
@@ -42,6 +161,7 @@
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  z-index: 1;
 }
 
 /* Floating toolbar at top: zoom + play + progress + Open in Node View */
@@ -151,6 +271,47 @@
   cursor: pointer;
 }
 
+.flow-view__event-card {
+  fill: rgba(2, 12, 30, 0.72);
+  stroke: color-mix(in srgb, var(--intent-color) 66%, #38bdf8 34%);
+  stroke-width: 1.6;
+  filter: drop-shadow(0 8px 16px rgba(2, 6, 23, 0.55));
+}
+
+.flow-view__event-card.is-current {
+  stroke: color-mix(in srgb, var(--intent-color) 86%, #ffffff 14%);
+  stroke-width: 2.6;
+  fill: color-mix(in srgb, var(--intent-color) 20%, rgba(2, 12, 30, 0.78));
+  filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.62));
+}
+
+.flow-view__event-card.is-critical {
+  stroke: rgba(248, 113, 113, 0.88);
+}
+
+.flow-view__event-card.is-warning {
+  stroke: rgba(245, 158, 11, 0.86);
+}
+
+.flow-view__event-card-subtitle {
+  fill: rgba(34, 211, 238, 0.95);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.flow-view__event-card-title {
+  fill: rgba(248, 250, 252, 0.96);
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.flow-view__event-card-summary {
+  fill: rgba(148, 163, 184, 0.94);
+  pointer-events: none;
+}
+
 /* Round box (unified with Node View card style) */
 .flow-view__node {
   fill: rgba(255, 255, 255, 0.04);
@@ -171,8 +332,8 @@
 }
 
 .flow-view__node--completed {
-  fill: rgba(13, 166, 242, 0.15);
-  stroke: var(--flow-primary);
+  fill: color-mix(in srgb, var(--intent-color) 24%, transparent);
+  stroke: color-mix(in srgb, var(--intent-color) 72%, #ffffff 8%);
 }
 
 .flow-view__node--key {
@@ -191,8 +352,8 @@
 
 /* Current node (selected) */
 .flow-view__node--current {
-  stroke: var(--flow-primary);
-  fill: rgba(13, 166, 242, 0.2);
+  stroke: color-mix(in srgb, var(--intent-color) 88%, #ffffff 10%);
+  fill: color-mix(in srgb, var(--intent-color) 28%, transparent);
   stroke-width: 2.5;
 }
 
@@ -308,6 +469,171 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.flow-view__telemetry {
+  position: absolute;
+  right: 0.8rem;
+  top: 5.2rem;
+  z-index: 2;
+  width: 13rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.flow-view__telemetry-card {
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(2, 12, 30, 0.58);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.5rem;
+}
+
+.flow-view__bars {
+  margin-top: 0.35rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: end;
+  gap: 0.22rem;
+}
+
+.flow-view__bars span {
+  flex: 1;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.95), rgba(6, 182, 212, 0.45));
+}
+
+.flow-view__stability-track {
+  margin-top: 0.35rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  overflow: hidden;
+}
+
+.flow-view__stability-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.88), rgba(34, 211, 238, 0.9));
+}
+
+.flow-view__telemetry-value {
+  margin-top: 0.3rem;
+  font-size: 0.65rem;
+  color: rgba(226, 232, 240, 0.92);
+  text-align: right;
+}
+
+.flow-view__active-card {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: min(23rem, calc(100% - 3rem));
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(2, 12, 30, 0.67);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  padding: 0.75rem 0.85rem;
+}
+
+.flow-view__active-subtitle {
+  color: rgba(34, 211, 238, 0.93);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.flow-view__active-card h3 {
+  margin: 0.32rem 0 0;
+  font-size: 1.28rem;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+}
+
+.flow-view__active-card p {
+  margin: 0.45rem 0 0;
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.77rem;
+  line-height: 1.4;
+}
+
+.flow-view__intent-legend {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.flow-view__intent-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.flow-view__intent-dot {
+  width: 0.46rem;
+  height: 0.46rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0.28rem currentColor;
+}
+
+.flow-view__intent-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flow-view__marker-legend {
+  margin-top: 0.45rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.18);
+  padding-top: 0.45rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.flow-view__marker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.25;
+}
+
+.flow-view__marker-glyph {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.flow-view__marker-glyph--key {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.flow-view__marker-glyph--critical {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fda4af;
+  border: 1px solid rgba(248, 113, 113, 0.58);
+}
+
+.flow-view__marker-glyph--done {
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.58);
+}
+
 .flow-view__control-desc {
   flex: 1;
   min-width: 0;
@@ -412,8 +738,37 @@
   pointer-events: none;
 }
 
+.flow-view__node-aura {
+  animation: flow-aura-spin 8s linear infinite;
+  transform-origin: center;
+}
+
 .flow-view__label {
   pointer-events: none;
+}
+
+@keyframes flow-aura-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes flow-warp-sweep {
+  from {
+    transform: translateX(16%) scaleX(0.92);
+    opacity: 0.15;
+  }
+  45% {
+    transform: translateX(0) scaleX(1.04);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(-12%) scaleX(0.98);
+    opacity: 0;
+  }
 }
 
 @media (max-width: 768px) {
@@ -431,5 +786,16 @@
   }
   .flow-view__signal-panel {
     display: none;
+  }
+  .flow-view__mission-log,
+  .flow-view__telemetry {
+    display: none;
+  }
+  .flow-view__active-card {
+    left: 50%;
+    top: auto;
+    bottom: 4.5rem;
+    transform: translateX(-50%);
+    width: calc(100% - 1rem);
   }
 }

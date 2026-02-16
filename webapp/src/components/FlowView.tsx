@@ -26,7 +26,6 @@ const ZOOM_SENSITIVITY = 0.0012;
 const ZOOM_STEP = 1.35;
 const FOCUS_ANIMATION_MS = 360;
 const OPEN_NODE_ANIMATION_MS = 280;
-const RIDE_CAMERA_MS = 320;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
@@ -179,6 +178,81 @@ function isWarningEvent(event: SessionEvent): boolean {
   return false;
 }
 
+function formatClock(ts?: string): string {
+  if (!ts) return "--:--:--";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "--:--:--";
+  return d.toLocaleTimeString(undefined, { hour12: false });
+}
+
+function interpolatePathPoint(points: [number, number][], t: number): [number, number] {
+  if (points.length === 0) return [0, 0];
+  if (points.length === 1) return points[0];
+  const i1 = Math.max(0, Math.min(points.length - 1, Math.floor(t)));
+  const i2 = Math.max(0, Math.min(points.length - 1, i1 + 1));
+  const i0 = Math.max(0, i1 - 1);
+  const i3 = Math.max(0, Math.min(points.length - 1, i2 + 1));
+  const localT = Math.max(0, Math.min(1, t - i1));
+  const p0 = points[i0];
+  const p1 = points[i1];
+  const p2 = points[i2];
+  const p3 = points[i3];
+  const tt = localT * localT;
+  const ttt = tt * localT;
+  const x =
+    0.5 *
+    ((2 * p1[0]) +
+      (-p0[0] + p2[0]) * localT +
+      (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * tt +
+      (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * ttt);
+  const y =
+    0.5 *
+    ((2 * p1[1]) +
+      (-p0[1] + p2[1]) * localT +
+      (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * tt +
+      (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * ttt);
+  return [x, y];
+}
+
+function buildFairCurvePath(points: [number, number][]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0][0]} ${points[0][1]}`;
+  let d = `M ${points[0][0]} ${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+}
+
+function getIntentId(event: SessionEvent): string {
+  if (typeof event.scope?.intent_id === "string" && event.scope.intent_id) {
+    return event.scope.intent_id;
+  }
+  if (typeof event.payload.intent_id === "string" && event.payload.intent_id) {
+    return event.payload.intent_id;
+  }
+  return "intent_fallback";
+}
+
+const INTENT_COLORS = [
+  "#22d3ee",
+  "#38bdf8",
+  "#34d399",
+  "#f59e0b",
+  "#a78bfa",
+  "#fb7185",
+  "#f97316",
+  "#10b981",
+];
+
 export function FlowView({
   session,
   currentIndex,
@@ -214,6 +288,9 @@ export function FlowView({
     [events.length],
   );
   const [rideCamera, setRideCamera] = useState(true);
+  const [shipPerspective, setShipPerspective] = useState(false);
+  const [travelFx, setTravelFx] = useState(0);
+  const [travelPosition, setTravelPosition] = useState(currentIndex);
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -321,6 +398,9 @@ export function FlowView({
   }, []);
 
   const focusAnimationRef = useRef<(() => void) | null>(null);
+  const travelFxRafRef = useRef<number | null>(null);
+  const prevIndexRef = useRef(currentIndex);
+  const travelPosRafRef = useRef<number | null>(null);
 
   const keyMomentIndices = useMemo(
     () => events
@@ -337,6 +417,38 @@ export function FlowView({
   const nextKeyMoment = keyMomentIndices.find((i) => i > currentIndex) ?? null;
   const nextCritical = criticalIndices.find((i) => i > currentIndex) ?? null;
   const criticalRatio = events.length === 0 ? 0 : criticalIndices.length / events.length;
+  const missionFeed = useMemo(() => {
+    const start = Math.max(0, currentIndex - 3);
+    return events.slice(start, currentIndex + 1).map((event, offset) => {
+      const idx = start + offset;
+      return {
+        index: idx,
+        time: formatClock(event.ts),
+        title: event.kind.toUpperCase(),
+        detail: getEventSummary(event),
+        isCurrent: idx === currentIndex,
+      };
+    });
+  }, [events, currentIndex]);
+  const intentOrder = useMemo(() => {
+    const order: string[] = [];
+    const seen = new Set<string>();
+    for (const event of events) {
+      const id = getIntentId(event);
+      if (!seen.has(id)) {
+        seen.add(id);
+        order.push(id);
+      }
+    }
+    return order;
+  }, [events]);
+  const intentColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    intentOrder.forEach((id, i) => {
+      map.set(id, INTENT_COLORS[i % INTENT_COLORS.length]);
+    });
+    return map;
+  }, [intentOrder]);
 
   useEffect(() => {
     if (focusNodeIndex == null || !layout || focusNodeIndex < 0 || focusNodeIndex >= layout.positions.length) return;
@@ -369,38 +481,132 @@ export function FlowView({
   }, [focusNodeIndex]);
 
   useEffect(() => {
-    if (!rideCamera || !isPlaying || !layout) return;
-    if (currentIndex < 0 || currentIndex >= layout.positions.length) return;
-    const [cx, cy] = layout.positions[currentIndex];
-    const targetZoom = Math.min(2.2, Math.max(1.3, zoom));
-    const targetPan = {
-      x: cx - pathBounds.width / (2 * targetZoom),
-      y: cy - pathBounds.height / (2 * targetZoom),
-    };
-    focusAnimationRef.current?.();
-    focusAnimationRef.current = animatePanZoom(
-      { pan: { x: pan.x, y: pan.y }, zoom },
-      { pan: targetPan, zoom: targetZoom },
-      RIDE_CAMERA_MS,
-      (p, z) => {
-        setPan(p);
-        setZoom(z);
-      },
-      () => {
-        focusAnimationRef.current = null;
+    if (!shipPerspective) {
+      setTravelPosition(currentIndex);
+      return;
+    }
+    if (travelPosRafRef.current != null) cancelAnimationFrame(travelPosRafRef.current);
+    const from = travelPosition;
+    const to = currentIndex;
+    if (Math.abs(to - from) < 0.001) return;
+    const start = performance.now();
+    const duration = isPlaying ? 1420 : 760;
+    const tick = () => {
+      const elapsed = performance.now() - start;
+      const t = Math.min(1, elapsed / duration);
+      const eased = easeOutCubic(t);
+      setTravelPosition(from + (to - from) * eased);
+      if (t < 1) {
+        travelPosRafRef.current = requestAnimationFrame(tick);
+      } else {
+        travelPosRafRef.current = null;
       }
-    );
-    return () => {
-      focusAnimationRef.current?.();
-      focusAnimationRef.current = null;
     };
-    // follow playback frame-by-frame only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    travelPosRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (travelPosRafRef.current != null) {
+        cancelAnimationFrame(travelPosRafRef.current);
+        travelPosRafRef.current = null;
+      }
+    };
+  }, [currentIndex, isPlaying, shipPerspective, travelPosition]);
+
+  useEffect(() => {
+    if (!rideCamera || !layout) return;
+    if (shipPerspective) {
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
+      return;
+    }
+    let rafId: number | null = null;
+    const tick = () => {
+      const maxIndex = Math.max(0, layout.positions.length - 1);
+      const t = Math.max(0, Math.min(maxIndex, currentIndex));
+      const [cx, cy] = interpolatePathPoint(layout.positions, t);
+      const targetZoom = isPlaying ? 1.24 : 1.12;
+      const targetPan = {
+        x: cx - pathBounds.width / (2 * targetZoom),
+        y: cy - pathBounds.height / (2 * targetZoom),
+      };
+      setPan((prev) => ({
+        x: prev.x + (targetPan.x - prev.x) * 0.16,
+        y: prev.y + (targetPan.y - prev.y) * 0.16,
+      }));
+      setZoom((prev) => prev + (targetZoom - prev) * 0.12);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, [
+    currentIndex,
+    isPlaying,
+    layout,
+    pathBounds.height,
+    pathBounds.width,
+    rideCamera,
+    shipPerspective,
+  ]);
+
+  useEffect(() => {
+    if (!(rideCamera && isPlaying)) return;
+    if (prevIndexRef.current === currentIndex) return;
+    prevIndexRef.current = currentIndex;
+    if (travelFxRafRef.current != null) cancelAnimationFrame(travelFxRafRef.current);
+    const started = performance.now();
+    const DURATION = 520;
+    const tick = () => {
+      const elapsed = performance.now() - started;
+      const t = Math.min(1, elapsed / DURATION);
+      // quick burst then cool-down
+      const pulse = t < 0.45 ? t / 0.45 : 1 - (t - 0.45) / 0.55;
+      setTravelFx(Math.max(0, pulse));
+      if (t < 1) {
+        travelFxRafRef.current = requestAnimationFrame(tick);
+      } else {
+        travelFxRafRef.current = null;
+        setTravelFx(0);
+      }
+    };
+    travelFxRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (travelFxRafRef.current != null) {
+        cancelAnimationFrame(travelFxRafRef.current);
+        travelFxRafRef.current = null;
+      }
+    };
   }, [currentIndex, isPlaying, rideCamera]);
 
   const currentEvent = events[currentIndex];
   const summary = currentEvent ? getEventSummary(currentEvent) : "";
   const upcomingCritical = criticalIndices.filter((i) => i >= currentIndex).slice(0, 4);
+  const cinematicZoom = shipPerspective ? 1 : zoom * (1 + travelFx * 0.14);
+  const cinematicPanX = shipPerspective ? 0 : (-pan.x * zoom - (travelFx * 16));
+  const cinematicPanY = shipPerspective ? 0 : (-pan.y * zoom);
+  const showTravelDenseLabels = !(rideCamera && isPlaying);
+  const avgTransitionMs = useMemo(() => {
+    if (events.length < 2) return 0;
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < events.length - 1; i++) {
+      const d = getDurationMs(events, i, i + 1);
+      if (d != null) {
+        total += d;
+        count += 1;
+      }
+    }
+    if (count === 0) return 0;
+    return Math.round(total / count);
+  }, [events]);
+  const verificationStats = useMemo(() => {
+    const all = events.filter((e) => e.kind === "verification");
+    const pass = all.filter((e) => e.payload.result === "pass").length;
+    const fail = all.filter((e) => e.payload.result === "fail").length;
+    const unknown = all.filter((e) => e.payload.result === "unknown").length;
+    const stability = all.length === 0 ? 70 : Math.max(0, Math.min(100, Math.round((pass / all.length) * 100)));
+    return { all: all.length, pass, fail, unknown, stability };
+  }, [events]);
 
   if (!layout) {
     return (
@@ -426,22 +632,115 @@ export function FlowView({
   const halfH = nodeBoxH / 2;
   const labelY = nodeBoxH / 2 + 14;
   const labelFontSize = Math.round(LABEL_FONT_SIZE * rowScale);
+  const laneRows = Array.from({ length: layout.numRows }, (_, row) => {
+    const start = row * layout.eventsPerRow;
+    const end = Math.min(events.length, start + layout.eventsPerRow);
+    const bucket = new Map<string, number>();
+    for (let i = start; i < end; i++) {
+      const intentId = getIntentId(events[i]);
+      bucket.set(intentId, (bucket.get(intentId) ?? 0) + 1);
+    }
+    let dominantIntent = "intent_fallback";
+    let dominantCount = 0;
+    for (const [intentId, count] of bucket.entries()) {
+      if (count > dominantCount) {
+        dominantIntent = intentId;
+        dominantCount = count;
+      }
+    }
+    return {
+      row,
+      y: PAD + row * layout.rowHeight,
+      intentId: dominantIntent,
+      color: intentColorMap.get(dominantIntent) ?? "#38bdf8",
+    };
+  });
+
+  const projected = useMemo(() => {
+    const horizonY = pathBounds.height * 0.16;
+    const centerX = pathBounds.width * 0.5;
+    const centerY = pathBounds.height * 0.56;
+    const futureDirX = -0.8;
+    const futureDirY = -0.6;
+    const pastDirX = 0.82;
+    const pastDirY = -0.57;
+    return positions.map(([x, y], i) => {
+      if (!shipPerspective) {
+        return { x, y, scale: 1, opacity: 1, depth: 0, isForward: false };
+      }
+      const delta = i - travelPosition;
+      const forward = delta >= 0;
+      const depth = Math.abs(delta);
+      const falloff = forward
+        ? Math.exp(-depth * 0.35)
+        : Math.exp(-depth * 0.16);
+      const axisDistance = forward
+        ? (1 - falloff) * (pathBounds.height * 0.86)
+        : Math.pow(depth + 0.16, 1.1) * (pathBounds.height * 0.18);
+      const dirX = forward ? futureDirX : pastDirX;
+      const dirY = forward ? futureDirY : pastDirY;
+      const perpX = -dirY;
+      const perpY = dirX;
+      const laneFactor = centerX === 0 ? 0 : (x - centerX) / centerX;
+      const swirl = Math.sin(delta * 0.92) * (forward ? 64 : 42) * Math.max(0.24, falloff);
+      const laneOffset = laneFactor * (forward ? 36 : 58);
+      const lateral = swirl + laneOffset;
+      const baseX = centerX + dirX * axisDistance;
+      const baseY = centerY + dirY * axisDistance;
+      let projX = baseX + perpX * lateral;
+      let projY = baseY + perpY * lateral;
+      if (forward) {
+        projY = Math.max(horizonY, projY);
+      }
+      const scale = forward
+        ? Math.max(0.26, 0.18 + falloff * 0.98)
+        : Math.min(1.45, 1 + depth * 0.1);
+      const opacity = forward
+        ? Math.max(0.2, 0.25 + falloff * 0.88)
+        : Math.max(0.18, 1 - depth * 0.16);
+      return { x: projX, y: projY, scale, opacity, depth, isForward: forward };
+    });
+  }, [positions, pathBounds.height, pathBounds.width, shipPerspective, travelPosition]);
 
   const CONNECTOR_INSET = 2;
 
   const connectorSegments = useMemo(() => {
     const out: { exit: [number, number]; entry: [number, number] }[] = [];
-    for (let i = 0; i < positions.length - 1; i++) {
-      const [cx0, cy0] = positions[i];
-      const [cx1, cy1] = positions[i + 1];
-      const dx = cx1 - cx0;
-      const dy = cy1 - cy0;
-      const exit = getRectBoundaryPoint(cx0, cy0, halfW, halfH, dx, dy);
-      const entry = getRectBoundaryPoint(cx1, cy1, halfW, halfH, -dx, -dy);
+    for (let i = 0; i < projected.length - 1; i++) {
+      const p0 = projected[i];
+      const p1 = projected[i + 1];
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const hw0 = halfW * p0.scale;
+      const hh0 = halfH * p0.scale;
+      const hw1 = halfW * p1.scale;
+      const hh1 = halfH * p1.scale;
+      const exit = getRectBoundaryPoint(p0.x, p0.y, hw0, hh0, dx, dy);
+      const entry = getRectBoundaryPoint(p1.x, p1.y, hw1, hh1, -dx, -dy);
       out.push({ exit: exit as [number, number], entry: entry as [number, number] });
     }
     return out;
-  }, [positions, halfW, halfH]);
+  }, [projected, halfW, halfH]);
+
+  const perspectiveRoutePath = useMemo(() => {
+    if (!shipPerspective || projected.length < 2) return "";
+    const points: [number, number][] = projected.map((p) => [p.x, p.y]);
+    return buildFairCurvePath(points);
+  }, [projected, shipPerspective]);
+
+  const renderOrder = useMemo(() => {
+    const order = events.map((_, i) => i);
+    if (!shipPerspective) return order;
+    return order.sort((a, b) => {
+      if (a === currentIndex) return 1;
+      if (b === currentIndex) return -1;
+      const pa = projected[a];
+      const pb = projected[b];
+      if (pa.scale !== pb.scale) return pa.scale - pb.scale;
+      if (pa.depth !== pb.depth) return pb.depth - pa.depth;
+      return a - b;
+    });
+  }, [currentIndex, events, projected, shipPerspective]);
 
   const handleOpenInNodeView = useCallback(() => {
     const idx = Math.max(0, Math.min(currentIndex, positions.length - 1));
@@ -480,6 +779,41 @@ export function FlowView({
       <div className="flow-view__main">
         <div className="flow-view__canvas-wrap">
           <div
+            className={`flow-view__space-layer ${rideCamera && isPlaying ? "is-traveling" : ""}`}
+            style={{
+              transform: `translate(${(-pan.x * 0.14) - (travelFx * 30)}px, ${-pan.y * 0.06}px) scale(${1 + travelFx * 0.06})`,
+            }}
+            aria-hidden
+          />
+          <div
+            className={`flow-view__warp-overlay ${rideCamera && isPlaying ? "is-active" : ""}`}
+            style={{ opacity: travelFx * 0.5 }}
+            aria-hidden
+          />
+          {shipPerspective && (
+            <aside className="flow-view__mission-log" aria-label="Mission log">
+              <div className="flow-view__panel-title">Mission Log</div>
+              <div className="flow-view__mission-items">
+                {missionFeed.map((entry) => (
+                  <button
+                    key={entry.index}
+                    type="button"
+                    className={`flow-view__mission-item ${entry.isCurrent ? "is-current" : ""}`}
+                    onClick={() => onSeek(entry.index)}
+                    title={`Jump to event ${entry.index + 1}`}
+                  >
+                    <div className="flow-view__mission-dot" />
+                    <div>
+                      <div className="flow-view__mission-time">TIMESTAMP {entry.time}</div>
+                      <div className="flow-view__mission-head">{entry.title}</div>
+                      <div className="flow-view__mission-detail">{entry.detail}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          )}
+          <div
             className="flow-view__toolbar flow-view__toolbar--float"
             role="group"
             aria-label="Flow controls"
@@ -510,6 +844,15 @@ export function FlowView({
               title={rideCamera ? "Ride camera: on" : "Ride camera: off"}
             >
               Ride
+            </button>
+            <button
+              type="button"
+              className={`flow-view__ride-btn ${shipPerspective ? "is-active" : ""}`}
+              onClick={() => setShipPerspective((v) => !v)}
+              aria-label={shipPerspective ? "Disable ship perspective" : "Enable ship perspective"}
+              title={shipPerspective ? "Ship perspective: on" : "Ship perspective: off"}
+            >
+              Perspective
             </button>
             {onPlay && onPause && (
               <>
@@ -588,6 +931,9 @@ export function FlowView({
               preserveAspectRatio="none"
             >
               <defs>
+                <pattern id="flow-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <path d="M 28 0 L 0 0 0 28" fill="none" stroke="rgba(56,189,248,0.14)" strokeWidth="0.7" />
+                </pattern>
                 <linearGradient
                   id="flow-path-gradient"
                   x1="0%"
@@ -612,10 +958,42 @@ export function FlowView({
               </defs>
               <g
                 className="flow-view__content"
-                transform={`translate(${-pan.x * zoom}, ${-pan.y * zoom}) scale(${zoom})`}
+                transform={`translate(${cinematicPanX}, ${cinematicPanY}) scale(${cinematicZoom})`}
               >
-                {/* Directional connectors: inset so line stops short of box edges; thin line + small arrow */}
-                {connectorSegments.map((seg, i) => {
+                <rect
+                  x={0}
+                  y={0}
+                  width={layout.width}
+                  height={layout.height}
+                  fill="url(#flow-grid)"
+                  opacity={0.55}
+                />
+                {!shipPerspective &&
+                  laneRows.map((lane) => (
+                    <rect
+                      key={lane.row}
+                      x={PAD / 2}
+                      y={lane.y}
+                      width={layout.width - PAD}
+                      height={layout.rowHeight}
+                      fill={lane.color}
+                      opacity={showTravelDenseLabels ? 0.07 : 0.03}
+                      rx={8}
+                    />
+                  ))}
+                {/* Directional connectors: regular mode arrows, perspective mode dotted route */}
+                {shipPerspective && perspectiveRoutePath && (
+                  <path
+                    d={perspectiveRoutePath}
+                    fill="none"
+                    stroke="rgba(56,189,248,0.92)"
+                    strokeWidth="1.8"
+                    strokeDasharray="6 8"
+                    strokeLinecap="round"
+                    opacity={0.95}
+                  />
+                )}
+                {!shipPerspective && connectorSegments.map((seg, i) => {
                   const [x0, y0] = seg.exit;
                   const [x1, y1] = seg.entry;
                   const dx = x1 - x0;
@@ -633,8 +1011,15 @@ export function FlowView({
                       key={i}
                       d={`M ${startX} ${startY} L ${endX} ${endY}`}
                       fill="none"
-                      stroke="#38bdf8"
-                      strokeWidth="2"
+                      stroke={
+                        isCriticalEvent(events[i + 1])
+                          ? "#f87171"
+                          : isWarningEvent(events[i + 1])
+                            ? "#f59e0b"
+                            : intentColorMap.get(getIntentId(events[i + 1])) ?? "#38bdf8"
+                      }
+                      strokeWidth={showTravelDenseLabels ? "2" : "1.4"}
+                      opacity={1}
                       strokeLinecap="round"
                       markerEnd="url(#flow-arrow)"
                     />
@@ -642,6 +1027,7 @@ export function FlowView({
                 })}
                 {/* Duration labels at segment midpoints */}
                 {connectorSegments.map((seg, i) => {
+                  if (shipPerspective || (!showTravelDenseLabels && i !== currentIndex - 1)) return null;
                   const [x0, y0] = seg.exit;
                   const [x1, y1] = seg.entry;
                   const mx = (x0 + x1) / 2;
@@ -655,8 +1041,8 @@ export function FlowView({
                       x={mx}
                       y={my - 8}
                       textAnchor="middle"
-                      fill={isActive ? "#0da6f2" : "rgba(255,255,255,0.5)"}
-                      fontSize={10}
+                      fill={isActive ? "#0da6f2" : "rgba(255,255,255,0.45)"}
+                      fontSize={showTravelDenseLabels ? 10 : 8}
                       fontWeight="700"
                     >
                       {label}
@@ -664,8 +1050,11 @@ export function FlowView({
                   );
                 })}
                 {/* Nodes */}
-                {events.map((event, i) => {
-                  const [cx, cy] = positions[i];
+                {renderOrder.map((i) => {
+                  const event = events[i];
+                  const p = projected[i];
+                  const cx = p.x;
+                  const cy = p.y;
                   const kind = getNodeKind(event, i, lastIndex);
                   const label =
                     event.kind.length > 16
@@ -676,88 +1065,189 @@ export function FlowView({
                   const keyMoment = isKeyMoment(event, i, lastIndex);
                   const critical = isCriticalEvent(event);
                   const warning = isWarningEvent(event);
+                  const intentColor = intentColorMap.get(getIntentId(event)) ?? "#38bdf8";
+                  const station = `Station ${String(i + 1).padStart(2, "0")}`;
+                  const level = `Level: ${event.kind}`;
+                  const cardW = Math.max(112, 290 * p.scale);
+                  const cardH = Math.max(52, 118 * p.scale);
+                  const subtitleSize = Math.max(7, 11 * p.scale);
+                  const titleSize = Math.max(10, 24 * p.scale);
+                  const summarySize = Math.max(8, 13 * p.scale);
+                  const cardSummary = getEventSummary(event);
 
                   return (
                     <g
                       key={i}
                       className={`flow-view__node-wrap ${isCurrent ? "flow-view__node-wrap--current" : ""} ${isCurrent && isPlaying ? "flow-view__node-wrap--playing" : ""}`}
                       transform={`translate(${cx}, ${cy})`}
+                      opacity={p.opacity}
                     >
-                      <rect
-                        x={-nodeBoxW / 2}
-                        y={-nodeBoxH / 2}
-                        width={nodeBoxW}
-                        height={nodeBoxH}
-                        rx={nodeBoxRx}
-                        ry={nodeBoxRx}
-                        className={`flow-view__node flow-view__node--box ${isCompleted ? "flow-view__node--completed" : ""} ${isCurrent ? "flow-view__node--current" : ""} ${isCurrent && isPlaying ? "flow-view__node--playing" : ""} ${keyMoment ? "flow-view__node--key" : ""} ${critical ? "flow-view__node--critical" : ""} ${warning ? "flow-view__node--warning" : ""}`}
-                        onClick={() => onSeek(i)}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Event ${i + 1}: ${label}`}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            onSeek(i);
-                          }
-                        }}
-                      />
-                      {isCompleted && (
-                        <circle
-                          r={5 * rowScale}
-                          cx={nodeBoxW / 2 - 6}
-                          cy={-nodeBoxH / 2 + 6}
-                          fill="#22c55e"
-                        />
+                      {shipPerspective ? (
+                        <>
+                          <rect
+                            x={-cardW / 2}
+                            y={-cardH / 2}
+                            width={cardW}
+                            height={cardH}
+                            rx={Math.max(8, 16 * p.scale)}
+                            ry={Math.max(8, 16 * p.scale)}
+                            className={`flow-view__event-card ${isCurrent ? "is-current" : ""} ${critical ? "is-critical" : ""} ${warning ? "is-warning" : ""}`}
+                            style={{ ["--intent-color" as string]: intentColor }}
+                            onClick={() => onSeek(i)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Event ${i + 1}: ${label}`}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSeek(i);
+                              }
+                            }}
+                          />
+                          <text
+                            x={-cardW / 2 + cardW * 0.08}
+                            y={-cardH / 2 + cardH * 0.24}
+                            textAnchor="start"
+                            className="flow-view__event-card-subtitle"
+                            fontSize={subtitleSize}
+                          >
+                            {`${level} · ${station}`}
+                          </text>
+                          <text
+                            x={-cardW / 2 + cardW * 0.08}
+                            y={-cardH / 2 + cardH * 0.56}
+                            textAnchor="start"
+                            className="flow-view__event-card-title"
+                            fontSize={titleSize}
+                          >
+                            {event.kind === "session_end" ? "Mission Complete" : "Active Trajectory"}
+                          </text>
+                          <text
+                            x={-cardW / 2 + cardW * 0.08}
+                            y={-cardH / 2 + cardH * 0.8}
+                            textAnchor="start"
+                            className="flow-view__event-card-summary"
+                            fontSize={summarySize}
+                          >
+                            {cardSummary.length > 60 ? `${cardSummary.slice(0, 57)}...` : cardSummary}
+                          </text>
+                        </>
+                      ) : (
+                        <>
+                          {isCurrent && (
+                            <circle
+                              r={Math.max(nodeBoxW, nodeBoxH) * 0.85 * p.scale}
+                              fill="none"
+                              stroke={intentColor}
+                              strokeOpacity={0.45}
+                              strokeDasharray="6 4"
+                              className="flow-view__node-aura"
+                            />
+                          )}
+                          <rect
+                            x={-(nodeBoxW * p.scale) / 2}
+                            y={-(nodeBoxH * p.scale) / 2}
+                            width={nodeBoxW * p.scale}
+                            height={nodeBoxH * p.scale}
+                            rx={nodeBoxRx}
+                            ry={nodeBoxRx}
+                            className={`flow-view__node flow-view__node--box ${isCompleted ? "flow-view__node--completed" : ""} ${isCurrent ? "flow-view__node--current" : ""} ${isCurrent && isPlaying ? "flow-view__node--playing" : ""} ${keyMoment ? "flow-view__node--key" : ""} ${critical ? "flow-view__node--critical" : ""} ${warning ? "flow-view__node--warning" : ""}`}
+                            style={{ ["--intent-color" as string]: intentColor }}
+                            onClick={() => onSeek(i)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Event ${i + 1}: ${label}`}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSeek(i);
+                              }
+                            }}
+                          />
+                          {isCompleted && (
+                            <g className="flow-view__marker flow-view__marker--done">
+                              <rect
+                                x={(nodeBoxW * p.scale) / 2 - 12}
+                                y={-(nodeBoxH * p.scale) / 2 + 2}
+                                width={10 * rowScale * p.scale}
+                                height={10 * rowScale * p.scale}
+                                rx={2 * rowScale}
+                                fill="#22c55e"
+                              />
+                              <text
+                                x={(nodeBoxW * p.scale) / 2 - 7}
+                                y={-(nodeBoxH * p.scale) / 2 + 10}
+                                fontSize={8 * rowScale * p.scale}
+                                fill="#052e16"
+                                fontWeight="800"
+                                textAnchor="middle"
+                              >
+                                ✓
+                              </text>
+                            </g>
+                          )}
+                          <g
+                            className="flow-view__node-icon"
+                            transform={`scale(${1.1 * rowScale * p.scale})`}
+                          >
+                            <path
+                              d={getIconPath(kind)}
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                            />
+                          </g>
+                          {keyMoment && (
+                            <text
+                              x={nodeBoxW / 2 - 4}
+                              y={-(nodeBoxH * p.scale) / 2 + 8}
+                              fontSize={10 * rowScale * p.scale}
+                              fill="#fbbf24"
+                            >
+                              ★
+                            </text>
+                          )}
+                          {critical && (
+                            <text
+                              x={-(nodeBoxW * p.scale) / 2 + 3}
+                              y={-(nodeBoxH * p.scale) / 2 + 8}
+                              fontSize={10 * rowScale * p.scale}
+                              fill="#f87171"
+                            >
+                              !
+                            </text>
+                          )}
+                          <text
+                            x={0}
+                            y={labelY * p.scale}
+                            textAnchor="middle"
+                            className="flow-view__label"
+                            fill="rgba(255,255,255,0.9)"
+                            fontSize={Math.max(7, Math.round(labelFontSize * p.scale))}
+                          >
+                            {label}
+                          </text>
+                          {showTravelDenseLabels && !shipPerspective && (
+                            <text
+                              x={0}
+                              y={-nodeBoxH / 2 - 6}
+                              textAnchor="middle"
+                              fill="rgba(148, 163, 184, 0.8)"
+                              fontSize={Math.max(8, Math.round(9 * rowScale))}
+                              className="flow-view__station-label"
+                            >
+                              ST-{String(i + 1).padStart(2, "0")}
+                            </text>
+                          )}
+                        </>
                       )}
-                      <g
-                        className="flow-view__node-icon"
-                        transform={`scale(${1.1 * rowScale})`}
-                      >
-                        <path
-                          d={getIconPath(kind)}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                      </g>
-                      {keyMoment && (
-                        <text
-                          x={nodeBoxW / 2 - 4}
-                          y={-nodeBoxH / 2 + 8}
-                          fontSize={10 * rowScale}
-                          fill="#fbbf24"
-                        >
-                          ★
-                        </text>
-                      )}
-                      {critical && (
-                        <text
-                          x={-nodeBoxW / 2 + 3}
-                          y={-nodeBoxH / 2 + 8}
-                          fontSize={10 * rowScale}
-                          fill="#f87171"
-                        >
-                          !
-                        </text>
-                      )}
-                      <text
-                        x={0}
-                        y={labelY}
-                        textAnchor="middle"
-                        className="flow-view__label"
-                        fill="rgba(255,255,255,0.9)"
-                        fontSize={labelFontSize}
-                      >
-                        {label}
-                      </text>
                     </g>
                   );
                 })}
               </g>
             </svg>
           </div>
-          <aside className="flow-view__signal-panel" aria-label="Flow signal panel">
+          {!shipPerspective && <aside className="flow-view__signal-panel" aria-label="Flow signal panel">
             <div className="flow-view__signal-title">Signal Feed</div>
             <div className="flow-view__signal-stats">
               <span>Key: {keyMomentIndices.length}</span>
@@ -799,7 +1289,56 @@ export function FlowView({
                 ))
               )}
             </div>
-          </aside>
+            <div className="flow-view__intent-legend">
+              {intentOrder.slice(0, 5).map((intentId) => (
+                <div key={intentId} className="flow-view__intent-chip">
+                  <span
+                    className="flow-view__intent-dot"
+                    style={{ backgroundColor: intentColorMap.get(intentId) ?? "#38bdf8" }}
+                  />
+                  <span className="flow-view__intent-name">{intentId}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flow-view__marker-legend">
+              <div className="flow-view__marker-item">
+                <span className="flow-view__marker-glyph flow-view__marker-glyph--key">★</span>
+                <span>Key milestone (intent/start/end/verification)</span>
+              </div>
+              <div className="flow-view__marker-item">
+                <span className="flow-view__marker-glyph flow-view__marker-glyph--critical">!</span>
+                <span>Critical event (high risk / failed check)</span>
+              </div>
+              <div className="flow-view__marker-item">
+                <span className="flow-view__marker-glyph flow-view__marker-glyph--done">✓</span>
+                <span>Completed in current playback run</span>
+              </div>
+            </div>
+          </aside>}
+          {shipPerspective && <aside className="flow-view__telemetry" aria-label="Telemetry">
+            <div className="flow-view__telemetry-card">
+              <div className="flow-view__panel-title">Network Latency</div>
+              <div className="flow-view__bars">
+                {Array.from({ length: 5 }).map((_, i) => {
+                  const value = Math.max(18, ((i + 2) * 17 + avgTransitionMs / 40) % 90);
+                  return <span key={i} style={{ height: `${value}%` }} />;
+                })}
+              </div>
+              <div className="flow-view__telemetry-value">{Math.max(9, Math.round(avgTransitionMs / 75))}ms</div>
+            </div>
+            <div className="flow-view__telemetry-card">
+              <div className="flow-view__panel-title">System Stability</div>
+              <div className="flow-view__stability-track">
+                <div
+                  className="flow-view__stability-fill"
+                  style={{ width: `${verificationStats.stability}%` }}
+                />
+              </div>
+              <div className="flow-view__telemetry-value">
+                {verificationStats.stability}% · {verificationStats.pass}p/{verificationStats.fail}f/{verificationStats.unknown}u
+              </div>
+            </div>
+          </aside>}
           <div className="flow-view__desc-panel flow-view__desc-panel--float">
             <span className="flow-view__control-desc" title={summary || undefined}>
               Event {currentIndex + 1} of {events.length}
