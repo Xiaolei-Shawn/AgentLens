@@ -1,0 +1,124 @@
+.reviewer-focus {
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.2), rgba(0, 0, 0, 0.18));
+  padding: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.reviewer-focus__alert {
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.reviewer-focus__alert h2 {
+  margin: 0;
+  font-size: 0.98rem;
+  color: #fecaca;
+}
+
+.reviewer-focus__alert p {
+  margin: 0.3rem 0 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.reviewer-focus__grid {
+  margin-top: 0.72rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reviewer-focus__grid--2 {
+  grid-template-columns: 1.3fr 1fr;
+}
+
+.reviewer-focus__card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: rgba(0, 0, 0, 0.25);
+  min-width: 0;
+}
+
+.reviewer-focus__card--danger {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.reviewer-focus__card--warn {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(120, 53, 15, 0.2);
+}
+
+.reviewer-focus__card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.84rem;
+}
+
+.reviewer-focus__card ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.79rem;
+  line-height: 1.35;
+}
+
+.reviewer-focus__card p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.reviewer-focus__jump-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.reviewer-focus__jump {
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 0.32rem 0.44rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.reviewer-focus__jump.is-high {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.reviewer-focus__jump.is-medium {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.reviewer-focus__jump.is-current {
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.85) inset;
+}
+
+.reviewer-focus__footnote {
+  margin-top: 0.5rem !important;
+  font-size: 0.72rem !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+@media (max-width: 1080px) {
+  .reviewer-focus__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewer-focus__grid--2 {
+    grid-template-columns: 1fr;
+  }
+}
+

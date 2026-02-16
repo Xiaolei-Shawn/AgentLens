@@ -3,7 +3,7 @@
  */
 
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
-import type { Session } from "../types/session";
+import type { Session, SessionEvent } from "../types/session";
 import {
   getNodeKind,
   getIconPath,
@@ -26,6 +26,7 @@ const ZOOM_SENSITIVITY = 0.0012;
 const ZOOM_STEP = 1.35;
 const FOCUS_ANIMATION_MS = 360;
 const OPEN_NODE_ANIMATION_MS = 280;
+const RIDE_CAMERA_MS = 320;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
@@ -151,6 +152,33 @@ function getRectBoundaryPoint(
   return [cx + t * dx, cy + t * dy];
 }
 
+function isCriticalEvent(event: SessionEvent): boolean {
+  if (event.kind === "verification" && event.payload.result === "fail") return true;
+  if (event.kind === "assumption" && event.payload.risk === "high") return true;
+  if (event.kind === "file_op") {
+    const target =
+      (typeof event.payload.target === "string" ? event.payload.target : "") ||
+      (typeof event.scope?.file === "string" ? event.scope.file : "");
+    const lower = target.toLowerCase();
+    if (
+      lower.includes("/api/") ||
+      lower.includes("/routes/") ||
+      lower.includes("/migrations/") ||
+      lower.endsWith("package.json")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isWarningEvent(event: SessionEvent): boolean {
+  if (isCriticalEvent(event)) return false;
+  if (event.kind === "verification" && event.payload.result === "unknown") return true;
+  if (event.kind === "decision") return true;
+  return false;
+}
+
 export function FlowView({
   session,
   currentIndex,
@@ -185,6 +213,7 @@ export function FlowView({
     () => computeGridLayout(events.length, CONTENT_WIDTH, CONTENT_HEIGHT),
     [events.length],
   );
+  const [rideCamera, setRideCamera] = useState(true);
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -293,6 +322,22 @@ export function FlowView({
 
   const focusAnimationRef = useRef<(() => void) | null>(null);
 
+  const keyMomentIndices = useMemo(
+    () => events
+      .map((e, i) => (isKeyMoment(e, i, lastIndex) ? i : -1))
+      .filter((i) => i >= 0),
+    [events, lastIndex]
+  );
+  const criticalIndices = useMemo(
+    () => events
+      .map((e, i) => (isCriticalEvent(e) ? i : -1))
+      .filter((i) => i >= 0),
+    [events]
+  );
+  const nextKeyMoment = keyMomentIndices.find((i) => i > currentIndex) ?? null;
+  const nextCritical = criticalIndices.find((i) => i > currentIndex) ?? null;
+  const criticalRatio = events.length === 0 ? 0 : criticalIndices.length / events.length;
+
   useEffect(() => {
     if (focusNodeIndex == null || !layout || focusNodeIndex < 0 || focusNodeIndex >= layout.positions.length) return;
     focusAnimationRef.current?.();
@@ -323,8 +368,39 @@ export function FlowView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNodeIndex]);
 
+  useEffect(() => {
+    if (!rideCamera || !isPlaying || !layout) return;
+    if (currentIndex < 0 || currentIndex >= layout.positions.length) return;
+    const [cx, cy] = layout.positions[currentIndex];
+    const targetZoom = Math.min(2.2, Math.max(1.3, zoom));
+    const targetPan = {
+      x: cx - pathBounds.width / (2 * targetZoom),
+      y: cy - pathBounds.height / (2 * targetZoom),
+    };
+    focusAnimationRef.current?.();
+    focusAnimationRef.current = animatePanZoom(
+      { pan: { x: pan.x, y: pan.y }, zoom },
+      { pan: targetPan, zoom: targetZoom },
+      RIDE_CAMERA_MS,
+      (p, z) => {
+        setPan(p);
+        setZoom(z);
+      },
+      () => {
+        focusAnimationRef.current = null;
+      }
+    );
+    return () => {
+      focusAnimationRef.current?.();
+      focusAnimationRef.current = null;
+    };
+    // follow playback frame-by-frame only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, isPlaying, rideCamera]);
+
   const currentEvent = events[currentIndex];
   const summary = currentEvent ? getEventSummary(currentEvent) : "";
+  const upcomingCritical = criticalIndices.filter((i) => i >= currentIndex).slice(0, 4);
 
   if (!layout) {
     return (
@@ -425,6 +501,15 @@ export function FlowView({
               aria-label="Zoom out"
             >
               −
+            </button>
+            <button
+              type="button"
+              className={`flow-view__ride-btn ${rideCamera ? "is-active" : ""}`}
+              onClick={() => setRideCamera((v) => !v)}
+              aria-label={rideCamera ? "Disable ride camera mode" : "Enable ride camera mode"}
+              title={rideCamera ? "Ride camera: on" : "Ride camera: off"}
+            >
+              Ride
             </button>
             {onPlay && onPause && (
               <>
@@ -589,6 +674,8 @@ export function FlowView({
                   const isCompleted = i < currentIndex;
                   const isCurrent = i === currentIndex;
                   const keyMoment = isKeyMoment(event, i, lastIndex);
+                  const critical = isCriticalEvent(event);
+                  const warning = isWarningEvent(event);
 
                   return (
                     <g
@@ -603,7 +690,7 @@ export function FlowView({
                         height={nodeBoxH}
                         rx={nodeBoxRx}
                         ry={nodeBoxRx}
-                        className={`flow-view__node flow-view__node--box ${isCompleted ? "flow-view__node--completed" : ""} ${isCurrent ? "flow-view__node--current" : ""} ${isCurrent && isPlaying ? "flow-view__node--playing" : ""} ${keyMoment ? "flow-view__node--key" : ""}`}
+                        className={`flow-view__node flow-view__node--box ${isCompleted ? "flow-view__node--completed" : ""} ${isCurrent ? "flow-view__node--current" : ""} ${isCurrent && isPlaying ? "flow-view__node--playing" : ""} ${keyMoment ? "flow-view__node--key" : ""} ${critical ? "flow-view__node--critical" : ""} ${warning ? "flow-view__node--warning" : ""}`}
                         onClick={() => onSeek(i)}
                         role="button"
                         tabIndex={0}
@@ -644,6 +731,16 @@ export function FlowView({
                           ★
                         </text>
                       )}
+                      {critical && (
+                        <text
+                          x={-nodeBoxW / 2 + 3}
+                          y={-nodeBoxH / 2 + 8}
+                          fontSize={10 * rowScale}
+                          fill="#f87171"
+                        >
+                          !
+                        </text>
+                      )}
                       <text
                         x={0}
                         y={labelY}
@@ -660,6 +757,49 @@ export function FlowView({
               </g>
             </svg>
           </div>
+          <aside className="flow-view__signal-panel" aria-label="Flow signal panel">
+            <div className="flow-view__signal-title">Signal Feed</div>
+            <div className="flow-view__signal-stats">
+              <span>Key: {keyMomentIndices.length}</span>
+              <span>Critical: {criticalIndices.length}</span>
+              <span>Danger: {(criticalRatio * 100).toFixed(0)}%</span>
+            </div>
+            <div className="flow-view__signal-actions">
+              <button
+                type="button"
+                className="flow-view__signal-btn"
+                disabled={nextKeyMoment == null}
+                onClick={() => nextKeyMoment != null && onSeek(nextKeyMoment)}
+              >
+                Next Key
+              </button>
+              <button
+                type="button"
+                className="flow-view__signal-btn flow-view__signal-btn--critical"
+                disabled={nextCritical == null}
+                onClick={() => nextCritical != null && onSeek(nextCritical)}
+              >
+                Next Critical
+              </button>
+            </div>
+            <div className="flow-view__signal-list">
+              {upcomingCritical.length === 0 ? (
+                <span className="flow-view__signal-empty">No pending critical events.</span>
+              ) : (
+                upcomingCritical.map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`flow-view__signal-item ${idx === currentIndex ? "is-current" : ""}`}
+                    onClick={() => onSeek(idx)}
+                    title={`Jump to event ${idx + 1}`}
+                  >
+                    E{idx + 1} · {events[idx].kind}
+                  </button>
+                ))
+              )}
+            </div>
+          </aside>
           <div className="flow-view__desc-panel flow-view__desc-panel--float">
             <span className="flow-view__control-desc" title={summary || undefined}>
               Event {currentIndex + 1} of {events.length}

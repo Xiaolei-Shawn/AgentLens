@@ -13,6 +13,7 @@ import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { NodeView } from "./NodeView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
+import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 
 import "./ReplayView.css";
 
@@ -30,15 +31,19 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     [session.events]
   );
 
-  const criticalIndices = useMemo(() => {
-    const out = new Set<number>();
+  const criticalEvents = useMemo(() => {
+    const out: Array<{ index: number; severity: "high" | "medium"; reason: string }> = [];
     for (let i = 0; i < session.events.length; i++) {
       const e = session.events[i];
-      if (e.kind === "decision" || e.kind === "session_end") out.add(i);
-      if (e.kind === "assumption" && e.payload.risk === "high") out.add(i);
+      if (e.kind === "decision") out.push({ index: i, severity: "medium", reason: "Decision point" });
+      if (e.kind === "session_end") out.push({ index: i, severity: "medium", reason: "Session outcome" });
+      if (e.kind === "assumption" && e.payload.risk === "high") {
+        out.push({ index: i, severity: "high", reason: "High-risk assumption" });
+      }
       if (e.kind === "verification") {
         const r = e.payload.result;
-        if (r === "fail" || r === "unknown") out.add(i);
+        if (r === "fail") out.push({ index: i, severity: "high", reason: "Verification failed" });
+        else if (r === "unknown") out.push({ index: i, severity: "medium", reason: "Verification unknown" });
       }
       if (e.kind === "file_op") {
         const target =
@@ -51,19 +56,24 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           lower.includes("/migrations/") ||
           lower.endsWith("package.json")
         ) {
-          out.add(i);
+          out.push({ index: i, severity: "high", reason: `High-impact file: ${target}` });
         }
       }
     }
-    return [...out].sort((a, b) => a - b);
+    out.sort((a, b) => a.index - b.index);
+    return out;
   }, [session.events]);
+  const criticalIndices = useMemo(
+    () => [...new Set(criticalEvents.map((e) => e.index))],
+    [criticalEvents]
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<
     number | null
   >(segments.length > 0 ? 0 : null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<"timeline" | "pivot">("timeline");
+  const [viewMode, setViewMode] = useState<"timeline" | "pivot" | "reviewer">("reviewer");
   /** When in Pivot, show either flow (graph) or node (detail). Switched via "Open in Node/Flow View" buttons. */
   const [pivotSubView, setPivotSubView] = useState<"flow" | "node">("flow");
   const [flowViewFocusIndex, setFlowViewFocusIndex] = useState<
@@ -74,6 +84,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWorkflowView = viewMode === "pivot";
+  const isReviewerView = viewMode === "reviewer";
   const playbackSpeed = speed;
 
   const eventCount = session.events.length;
@@ -179,7 +190,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
   return (
     <div
-      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}
+      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""} ${isReviewerView ? "replay-view--reviewer" : ""}`}
     >
       <header className="replay-header">
         <button
@@ -200,6 +211,8 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               </span>
               Workflow Visualizer
             </>
+          ) : isReviewerView ? (
+            "Reviewer Mode"
           ) : (
             session.title
           )}
@@ -217,6 +230,13 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </button>
           <button
             type="button"
+            className={viewMode === "reviewer" ? "active" : ""}
+            onClick={() => setViewMode("reviewer")}
+          >
+            Reviewer
+          </button>
+          <button
+            type="button"
             className={viewMode === "pivot" ? "active" : ""}
             onClick={() => setViewMode("pivot")}
           >
@@ -225,7 +245,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </div>
       </header>
       <div className="replay-layout">
-        {!isWorkflowView && (
+        {viewMode === "timeline" && (
           <aside className="replay-sidebar">
             <PlanNodesPanel
               session={session}
@@ -240,7 +260,17 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </aside>
         )}
         <main className="replay-main">
-          <ReviewerHighlights normalized={normalized} reviewer={reviewer} />
+          {isReviewerView && <ReviewerHighlights normalized={normalized} reviewer={reviewer} />}
+          {isReviewerView && (
+            <ReviewerFocusPanel
+              session={session}
+              normalized={normalized}
+              reviewer={reviewer}
+              currentIndex={currentIndex}
+              onSeek={handleSeek}
+              criticalEvents={criticalEvents}
+            />
+          )}
           {viewMode === "pivot" && pivotSubView === "flow" && (
             <FlowView
               session={session}
@@ -301,7 +331,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </main>
       </div>
       <footer className="replay-footer">
-        {viewMode === "timeline" ? (
+        {viewMode === "timeline" || viewMode === "reviewer" ? (
           <>
             <TimelineStrip
               eventCount={eventCount}

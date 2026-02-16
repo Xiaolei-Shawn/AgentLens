@@ -121,6 +121,10 @@
   padding: 0;
 }
 
+.replay-view--reviewer .replay-main {
+  background: radial-gradient(circle at 10% 0%, rgba(127, 29, 29, 0.18), transparent 45%);
+}
+
 .replay-title--workflow {
   display: flex;
   align-items: center;

@@ -86,6 +86,24 @@
   flex-shrink: 0;
 }
 
+.flow-view__ride-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--flow-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.24rem 0.45rem;
+  cursor: pointer;
+}
+
+.flow-view__ride-btn.is-active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.7);
+  color: #bbf7d0;
+}
+
 .flow-view__zoom-btn {
   width: 1.75rem;
   height: 1.75rem;
@@ -161,6 +179,16 @@
   stroke: rgba(251, 191, 36, 0.8);
 }
 
+.flow-view__node--critical {
+  stroke: rgba(248, 113, 113, 0.85);
+  fill: rgba(248, 113, 113, 0.16);
+}
+
+.flow-view__node--warning {
+  stroke: rgba(245, 158, 11, 0.8);
+  fill: rgba(245, 158, 11, 0.14);
+}
+
 /* Current node (selected) */
 .flow-view__node--current {
   stroke: var(--flow-primary);
@@ -195,6 +223,89 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.flow-view__signal-panel {
+  position: absolute;
+  right: 0.6rem;
+  top: 3.2rem;
+  z-index: 2;
+  width: min(15rem, calc(100% - 1rem));
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.5rem;
+}
+
+.flow-view__signal-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.flow-view__signal-stats {
+  margin-top: 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.flow-view__signal-actions {
+  margin-top: 0.45rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.flow-view__signal-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.94);
+  border-radius: 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.25rem 0.35rem;
+  cursor: pointer;
+}
+
+.flow-view__signal-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.flow-view__signal-btn--critical {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.flow-view__signal-list {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.flow-view__signal-item {
+  text-align: left;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.13);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+}
+
+.flow-view__signal-item.is-current {
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.8) inset;
+}
+
+.flow-view__signal-empty {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .flow-view__control-desc {
@@ -317,5 +428,8 @@
   }
   .flow-view__desc-panel--float {
     max-width: calc(100% - 1rem);
+  }
+  .flow-view__signal-panel {
+    display: none;
   }
 }
