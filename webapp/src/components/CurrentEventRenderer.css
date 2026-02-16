@@ -16,14 +16,14 @@
 }
 
 .event-type {
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(255, 255, 255, 0.5);
 }
 
 .event-index {
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -34,23 +34,25 @@
 
 .event-text h3 {
   margin: 0 0 0.5rem 0;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .event-text p {
   margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .event-meta {
   color: rgba(255, 255, 255, 0.5);
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 .event-path {
   margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: #646cff;
   font-family: ui-monospace, monospace;
 }
@@ -61,7 +63,7 @@
   padding: 0.75rem;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 6px;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1.5;
   overflow-x: auto;
   white-space: pre;
@@ -87,7 +89,7 @@ details {
 
 details summary {
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
 }
 
@@ -119,6 +121,7 @@ details summary {
 }
 
 .event-audit-list li {
-  margin: 0.2rem 0;
-  line-height: 1.4;
+  margin: 0.25rem 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
 }

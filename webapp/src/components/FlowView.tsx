@@ -726,9 +726,9 @@ export function FlowView({
   });
 
   const projected = useMemo(() => {
-    const horizonY = pathBounds.height * 0.16;
+    const horizonY = pathBounds.height * 0.14;
     const centerX = pathBounds.width * 0.5;
-    const centerY = pathBounds.height * 0.56;
+    const centerY = pathBounds.height * 0.4;
     const futureDirX = -0.8;
     const futureDirY = -0.6;
     const pastDirX = 0.82;
