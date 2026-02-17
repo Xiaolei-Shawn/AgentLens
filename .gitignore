@@ -26,5 +26,8 @@ Thumbs.db
 npm-debug.log*
 sessions/
 
+.cursor/
+.codex/
+
 # Optional: uncomment if you want to ignore session output
 # sessions/*.json
