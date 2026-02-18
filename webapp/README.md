@@ -27,6 +27,19 @@ npm run build
 
 Output is in `dist/`. Serve with any static server or open `dist/index.html` (file://) if the app supports it.
 
+## Product editions (OSS vs Pro)
+
+Set `VITE_AL_PRODUCT_EDITION` at build time:
+
+- `oss` (default): disables proprietary analyzer insights and falls back to `NodeView` in pivot mode.
+- `pro`: reserved for private builds where proprietary analyzer modules are supplied.
+
+Example:
+
+```bash
+VITE_AL_PRODUCT_EDITION=oss npm run build
+```
+
 ## Session format
 
 Session JSON must conform to the canonical schema (see `../schema/`). Same format produced by the MCP server on `record_session_end`.

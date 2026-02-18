@@ -70,6 +70,7 @@ interface FlowViewProps {
   /** When set, flow view will zoom to center this node (e.g. when switching from Node View). */
   focusNodeIndex?: number | null;
   onFocusComplete?: () => void;
+  allowPerspective?: boolean;
 }
 
 const PAD = 48;
@@ -266,6 +267,7 @@ export function FlowView({
   onOpenInNodeView,
   focusNodeIndex = null,
   onFocusComplete,
+  allowPerspective = true,
 }: FlowViewProps) {
   const events = session.events;
   const lastIndex = events.length - 1;
@@ -294,6 +296,12 @@ export function FlowView({
   const [shipPerspective, setShipPerspective] = useState(false);
   const [travelFx, setTravelFx] = useState(0);
   const [travelPosition, setTravelPosition] = useState(currentIndex);
+  useEffect(() => {
+    if (!allowPerspective && shipPerspective) {
+      setShipPerspective(false);
+      setRideCamera(true);
+    }
+  }, [allowPerspective, shipPerspective]);
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -938,21 +946,23 @@ export function FlowView({
             >
               Ride
             </button>
-            <button
-              type="button"
-              className={`flow-view__ride-btn ${shipPerspective ? "is-active" : ""}`}
-              onClick={() =>
-                setShipPerspective((v) => {
-                  const next = !v;
-                  if (next) setRideCamera(false);
-                  return next;
-                })
-              }
-              aria-label={shipPerspective ? "Disable ship perspective" : "Enable ship perspective"}
-              title={shipPerspective ? "Ship perspective: on" : "Ship perspective: off"}
-            >
-              Perspective
-            </button>
+            {allowPerspective && (
+              <button
+                type="button"
+                className={`flow-view__ride-btn ${shipPerspective ? "is-active" : ""}`}
+                onClick={() =>
+                  setShipPerspective((v) => {
+                    const next = !v;
+                    if (next) setRideCamera(false);
+                    return next;
+                  })
+                }
+                aria-label={shipPerspective ? "Disable ship perspective" : "Enable ship perspective"}
+                title={shipPerspective ? "Ship perspective: on" : "Ship perspective: off"}
+              >
+                Perspective
+              </button>
+            )}
             {onPlay && onPause && (
               <>
                 <span className="flow-view__toolbar-sep" aria-hidden="true" />

@@ -7,6 +7,15 @@ Local-first MCP server for AI agent session auditing.
 - Serves a local web dashboard + API from the same process
 - Data never leaves the machine unless you explicitly move files
 
+## Open-source connector model
+
+This package is intended to be the open-source MCP connector layer.
+
+- Open source: MCP tools + canonical event capture + local storage/API serving
+- Proprietary (optional): advanced analyzer dashboard/heuristics binaries can be served separately
+
+You can point the built-in dashboard server to any static bundle via `AL_DASHBOARD_WEBAPP_DIR`.
+
 ## Features
 
 - Canonical event capture with sequence ordering and timestamps

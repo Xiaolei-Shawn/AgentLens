@@ -1,13 +1,16 @@
 import type { CanonicalEvent } from "@al/schema/event-envelope";
 import {
-  generateSuggestions,
   type Suggestion,
-  type AssumptionArtifactInput,
-  type HotspotArtifactInput,
-  type RiskArtifactInput,
 } from "./actionRecommendationEngine";
+import {
+  deriveAssumptions as deriveAnalyzerAssumptions,
+  deriveConfidence as deriveAnalyzerConfidence,
+  deriveHotspots as deriveAnalyzerHotspots,
+  deriveRecommendedActions as deriveAnalyzerRecommendedActions,
+  deriveRisks as deriveAnalyzerRisks,
+} from "./analyzer";
 
-type SessionOutcome = "completed" | "partial" | "failed" | "aborted" | "unknown";
+export type SessionOutcome = "completed" | "partial" | "failed" | "aborted" | "unknown";
 type IntentStatus = "completed" | "partial" | "abandoned";
 type BlastRadius = "small" | "medium" | "large";
 type RiskLevel = "low" | "medium" | "high";
@@ -190,12 +193,14 @@ export interface PipelineConfig {
   repeatedEditThreshold: number;
   largeChangeLineThreshold: number;
   recentChangeWindowMs: number;
+  enableProInsights: boolean;
 }
 
 const defaultConfig: PipelineConfig = {
   repeatedEditThreshold: 3,
   largeChangeLineThreshold: 120,
   recentChangeWindowMs: 10 * 60 * 1000,
+  enableProInsights: true,
 };
 
 interface IntentBoundary {
@@ -411,27 +416,7 @@ function deriveDecisions(events: CanonicalEvent[]): NormalizedDecision[] {
 }
 
 function deriveAssumptions(events: CanonicalEvent[]): NormalizedAssumption[] {
-  return events
-    .filter((e) => e.kind === "assumption")
-    .map((e) => {
-      const payload = getPayload(e);
-      const validatedRaw = payload.validated;
-      const validated =
-        validatedRaw === true || validatedRaw === false || validatedRaw === "unknown"
-          ? validatedRaw
-          : "unknown";
-      return {
-        event_id: e.id,
-        intent_id: getIntentId(e),
-        statement: toStringValue(payload.statement) ?? "Assumption",
-        validated,
-        risk:
-          payload.risk === "low" || payload.risk === "medium" || payload.risk === "high"
-            ? payload.risk
-            : undefined,
-        ts: e.ts,
-      };
-    });
+  return deriveAnalyzerAssumptions(events);
 }
 
 function deriveVerifications(events: CanonicalEvent[]): VerificationArtifact[] {
@@ -630,36 +615,6 @@ function deriveImpactForEvents(id: string, intentId: string | undefined, events:
   };
 }
 
-const mitigationByFactor: Record<RiskFactorKey, string> = {
-  public_api_changed: "Add or update API contract tests and publish a migration/change note.",
-  schema_changed: "Run forward/backward migration verification and add rollback steps.",
-  dependency_changed: "Run dependency audit/changelog review and pin versions if needed.",
-  blast_radius_large: "Split rollout into phases and add targeted smoke checks per module.",
-  blast_radius_medium: "Add focused integration checks for touched modules before merge.",
-  high_risk_assumption: "Validate high-risk assumptions with data/tests before release.",
-  medium_risk_assumption: "Add explicit validation plan for medium-risk assumptions.",
-  unknown_assumption: "Resolve unknown assumptions or document fallback behavior.",
-  verification_missing: "Run at least test + lint/typecheck and record results.",
-  verification_failed: "Fix failed checks and re-run full verification suite.",
-  verification_partial: "Expand verification to cover changed hotspots and critical flows.",
-  revision_high_churn: "Review change churn and split unstable edits into smaller PRs.",
-  revision_create_delete: "Re-check intent boundaries and remove dead-end implementation paths.",
-  decision_hard_to_reverse: "Add feature flag/rollback guard for hard-to-reverse decisions.",
-  large_change_volume: "Request deeper review and add regression tests for large change set.",
-  failed_or_partial_outcome: "Create follow-up plan with unresolved items and owner.",
-};
-
-function dedupeStrings(items: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of items) {
-    if (seen.has(item)) continue;
-    seen.add(item);
-    out.push(item);
-  }
-  return out;
-}
-
 function deriveRisks(
   outcome: SessionOutcome,
   impacts: ImpactArtifact[],
@@ -668,155 +623,7 @@ function deriveRisks(
   revisions: RevisionArtifact[],
   verifications: VerificationArtifact[]
 ): RiskArtifact[] {
-  const risks: RiskArtifact[] = [];
-  const assumptionsByIntent = new Map<string | undefined, NormalizedAssumption[]>();
-  for (const a of assumptions) {
-    const key = a.intent_id;
-    const list = assumptionsByIntent.get(key) ?? [];
-    list.push(a);
-    assumptionsByIntent.set(key, list);
-  }
-
-  const revisionsByIntent = new Map<string | undefined, number>();
-  for (const r of revisions) {
-    revisionsByIntent.set(r.intent_id, (revisionsByIntent.get(r.intent_id) ?? 0) + 1);
-  }
-
-  const verificationsByIntent = new Map<string | undefined, VerificationArtifact[]>();
-  for (const v of verifications) {
-    const list = verificationsByIntent.get(v.intent_id) ?? [];
-    list.push(v);
-    verificationsByIntent.set(v.intent_id, list);
-  }
-  const decisionsByIntent = new Map<string | undefined, NormalizedDecision[]>();
-  for (const d of decisions) {
-    const list = decisionsByIntent.get(d.intent_id) ?? [];
-    list.push(d);
-    decisionsByIntent.set(d.intent_id, list);
-  }
-  const revisionsByIntentType = new Map<string | undefined, Set<RevisionArtifact["type"]>>();
-  for (const r of revisions) {
-    const set = revisionsByIntentType.get(r.intent_id) ?? new Set<RevisionArtifact["type"]>();
-    set.add(r.type);
-    revisionsByIntentType.set(r.intent_id, set);
-  }
-  const globalVerifications = verificationsByIntent.get(undefined) ?? [];
-
-  for (const impact of impacts) {
-    const factors: RiskArtifact["factors"] = [];
-    const addFactor = (key: RiskFactorKey, factorScore: number, reason: string) => {
-      factors.push({ key, score: factorScore, reason });
-    };
-    const relevantAssumptions = assumptionsByIntent.get(impact.intent_id) ?? [];
-    const hasHighRiskAssumption = relevantAssumptions.some((a) => a.risk === "high" && a.validated !== true);
-    const hasMediumRiskAssumption = relevantAssumptions.some((a) => a.risk === "medium" && a.validated !== true);
-    const hasUnknownAssumption = relevantAssumptions.some((a) => a.validated === "unknown");
-    const localVerifications = [
-      ...(verificationsByIntent.get(impact.intent_id) ?? []),
-      ...(impact.intent_id === undefined ? [] : globalVerifications),
-    ];
-    const hasAnyVerification = localVerifications.length > 0;
-    const hasPass = localVerifications.some((v) => v.result === "pass");
-    const hasFail = localVerifications.some((v) => v.result === "fail");
-    const hasUnknownVerification = localVerifications.some((v) => v.result === "unknown");
-    const revisionCount = revisionsByIntent.get(impact.intent_id) ?? 0;
-    const revisionTypes = revisionsByIntentType.get(impact.intent_id) ?? new Set<RevisionArtifact["type"]>();
-    const impactLineVolume = impact.lines_added + impact.lines_removed;
-    const localDecisions = decisionsByIntent.get(impact.intent_id) ?? [];
-    const hasHardToReverseDecision = localDecisions.some((d) => d.reversibility === "hard");
-
-    if (impact.public_api_changed) {
-      addFactor("public_api_changed", 4, "Public API changed");
-    }
-    if (impact.schema_changed) {
-      addFactor("schema_changed", 4, "Schema/migration changed");
-    }
-    if (impact.dependency_added) {
-      addFactor("dependency_changed", 2, "Dependency manifest/lock changed");
-    }
-    if (impact.blast_radius === "large") {
-      addFactor("blast_radius_large", 3, "Large blast radius");
-    } else if (impact.blast_radius === "medium") {
-      addFactor("blast_radius_medium", 2, "Medium blast radius");
-    }
-    if (hasHighRiskAssumption) {
-      addFactor("high_risk_assumption", 3, "High-risk assumption present");
-    } else if (hasMediumRiskAssumption) {
-      addFactor("medium_risk_assumption", 2, "Medium-risk assumption present");
-    }
-    if (hasUnknownAssumption) {
-      addFactor("unknown_assumption", 1, "Assumptions remain unvalidated");
-    }
-    if (!hasAnyVerification) {
-      addFactor("verification_missing", 4, "No verification events");
-    } else {
-      if (hasFail) addFactor("verification_failed", 4, "Verification failure recorded");
-      if (!hasPass || hasUnknownVerification) addFactor("verification_partial", 2, "Verification coverage is partial");
-    }
-    if (revisionCount > 0) {
-      addFactor("revision_high_churn", Math.min(3, revisionCount), `Revisions detected (${revisionCount})`);
-    }
-    if (revisionTypes.has("create_then_delete")) {
-      addFactor("revision_create_delete", 2, "Create-then-delete revision detected");
-    }
-    if (hasHardToReverseDecision) {
-      addFactor("decision_hard_to_reverse", 2, "Hard-to-reverse decision present");
-    }
-    if (impactLineVolume >= 250) {
-      addFactor("large_change_volume", 2, `Large change volume (${impactLineVolume} lines)`);
-    }
-    if (outcome === "failed" || outcome === "partial" || outcome === "aborted") {
-      addFactor("failed_or_partial_outcome", 2, `Session outcome is ${outcome}`);
-    }
-
-    const score = factors.reduce((sum, factor) => sum + factor.score, 0);
-    const reasons = factors.map((factor) => factor.reason);
-    const mitigations = dedupeStrings(
-      factors
-        .sort((a, b) => b.score - a.score)
-        .map((factor) => mitigationByFactor[factor.key])
-    ).slice(0, 6);
-
-    let level: RiskLevel = "low";
-    const hasHighCondition = factors.some(
-      (factor) =>
-        factor.key === "public_api_changed" ||
-        factor.key === "schema_changed" ||
-        factor.key === "blast_radius_large" ||
-        factor.key === "high_risk_assumption" ||
-        factor.key === "verification_missing" ||
-        factor.key === "verification_failed"
-    );
-    if (hasHighCondition || score >= 9) level = "high";
-    else if (score >= 4) {
-      level = "medium";
-    }
-
-    risks.push({
-      id: `risk_${impact.id}`,
-      intent_id: impact.intent_id,
-      level,
-      score,
-      factors,
-      reasons: reasons.length > 0 ? reasons : ["No significant risk signals"],
-      mitigations:
-        mitigations.length > 0 ? mitigations : ["Maintain baseline checks and monitor post-merge behavior."],
-    });
-  }
-
-  return risks;
-}
-
-function criticalityMatches(file: string): string[] {
-  const lower = file.toLowerCase();
-  const matches: string[] = [];
-  if (lower.includes("/auth/") || lower.includes("/security/")) matches.push("security");
-  if (lower.includes("/api/") || lower.includes("/routes/")) matches.push("api");
-  if (lower.includes("/core/")) matches.push("core");
-  if (lower.includes("/db/") || lower.includes("/migrations/") || lower.endsWith(".sql")) {
-    matches.push("data");
-  }
-  return matches;
+  return deriveAnalyzerRisks(outcome, impacts, assumptions, decisions, revisions, verifications);
 }
 
 function deriveHotspots(
@@ -824,58 +631,7 @@ function deriveHotspots(
   decisions: NormalizedDecision[],
   assumptions: NormalizedAssumption[]
 ): ReviewHotspot[] {
-  type MutableHotspot = Omit<ReviewHotspot, "score"> & { score: number };
-  const map = new Map<string, MutableHotspot>();
-
-  const decisionIntents = new Set(decisions.map((d) => d.intent_id).filter(Boolean));
-  const assumptionIntents = new Set(assumptions.map((a) => a.intent_id).filter(Boolean));
-
-  for (const e of events) {
-    if (e.kind !== "file_op") continue;
-    const file = getFileTarget(e);
-    if (!file) continue;
-    const payload = getPayload(e);
-    const lines =
-      toNumber(payload.lines_added) +
-      toNumber(payload.lines_removed) +
-      toNumber(payload.added) +
-      toNumber(payload.removed);
-    const module = getModuleFromPath(file);
-    const current = map.get(file) ?? {
-      id: `hotspot_${file}`,
-      file,
-      module,
-      score: 0,
-      edit_count: 0,
-      lines_changed: 0,
-      associated_decisions: 0,
-      associated_assumptions: 0,
-      criticality_hits: [],
-    };
-
-    current.edit_count += 1;
-    current.lines_changed += lines;
-    const intentId = getIntentId(e);
-    if (intentId && decisionIntents.has(intentId)) current.associated_decisions += 1;
-    if (intentId && assumptionIntents.has(intentId)) current.associated_assumptions += 1;
-    for (const hit of criticalityMatches(file)) {
-      if (!current.criticality_hits.includes(hit)) current.criticality_hits.push(hit);
-    }
-    map.set(file, current);
-  }
-
-  const hotspots = [...map.values()].map((h) => {
-    const base = h.edit_count * 2;
-    const lineWeight = Math.min(6, Math.floor(h.lines_changed / 80));
-    const decisionWeight = h.associated_decisions * 3;
-    const assumptionWeight = h.associated_assumptions * 2;
-    const criticalityWeight = h.criticality_hits.length * 3;
-    h.score = base + lineWeight + decisionWeight + assumptionWeight + criticalityWeight;
-    return h;
-  });
-
-  hotspots.sort((a, b) => b.score - a.score || b.edit_count - a.edit_count);
-  return hotspots;
+  return deriveAnalyzerHotspots(events, decisions, assumptions);
 }
 
 function deriveVerificationSummary(verifications: VerificationArtifact[]): ReviewerVerificationSummary {
@@ -885,18 +641,6 @@ function deriveVerificationSummary(verifications: VerificationArtifact[]): Revie
   const coverage: ReviewerVerificationSummary["coverage"] =
     verifications.length === 0 ? "none" : fail > 0 || unknown > 0 ? "partial" : "full";
   return { pass, fail, unknown, coverage };
-}
-
-function deriveConfidence(normalized: SessionNormalized, reviewer: ReviewerVerificationSummary): number {
-  let score = 0.5;
-  if (reviewer.coverage === "full") score += 0.25;
-  if (reviewer.coverage === "none") score -= 0.25;
-  const highRiskAssumptions = normalized.assumptions.filter((a) => a.risk === "high").length;
-  score -= Math.min(0.2, highRiskAssumptions * 0.05);
-  const failed = normalized.verifications.filter((v) => v.result === "fail").length;
-  score -= Math.min(0.2, failed * 0.05);
-  if (normalized.revisions.length > 3) score -= 0.05;
-  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
 }
 
 export function normalizeSessionFromRawEvents(
@@ -949,7 +693,7 @@ export function normalizeSessionFromRawEvents(
   });
 
   const decisions = deriveDecisions(events);
-  const assumptions = deriveAssumptions(events);
+  const assumptions = cfg.enableProInsights ? deriveAssumptions(events) : [];
   const verifications = deriveVerifications(events);
   const revisions = deriveRevisions(events, intents, cfg);
 
@@ -960,8 +704,10 @@ export function normalizeSessionFromRawEvents(
   }
   impacts.push(deriveImpactForEvents("impact_session_total", undefined, events.filter((e) => e.kind === "file_op")));
 
-  const risks = deriveRisks(outcome, impacts, assumptions, decisions, revisions, verifications);
-  const hotspots = deriveHotspots(events, decisions, assumptions);
+  const risks = cfg.enableProInsights
+    ? deriveRisks(outcome, impacts, assumptions, decisions, revisions, verifications)
+    : [];
+  const hotspots = cfg.enableProInsights ? deriveHotspots(events, decisions, assumptions) : [];
   const tokenUsage = deriveTokenUsageSummary(events);
 
   return {
@@ -988,13 +734,19 @@ export function normalizeSessionFromRawEvents(
   };
 }
 
-export function buildReviewerView(normalized: SessionNormalized): ReviewerView {
+export function buildReviewerView(
+  normalized: SessionNormalized,
+  options: { enableProInsights?: boolean } = {}
+): ReviewerView {
+  const enableProInsights = options.enableProInsights ?? true;
   const verificationSummary = deriveVerificationSummary(normalized.verifications);
   const intentSummaries: ReviewerIntentSummary[] = normalized.intents.map((intent) => {
     const impact = normalized.impacts.find((i) => i.intent_id === intent.id);
-    const risks = normalized.risks
-      .filter((r) => r.intent_id === intent.id)
-      .map((r) => r.level);
+    const risks = enableProInsights
+      ? normalized.risks
+          .filter((r) => r.intent_id === intent.id)
+          .map((r) => r.level)
+      : [];
     return {
       intent_id: intent.id,
       title: intent.title,
@@ -1004,58 +756,19 @@ export function buildReviewerView(normalized: SessionNormalized): ReviewerView {
     };
   });
 
-  const highRiskItems = normalized.risks
-    .filter((r) => r.level === "high")
-    .sort((a, b) => b.score - a.score)
-    .map((r) => ({
-      intent_id: r.intent_id,
-      level: r.level,
-      score: r.score,
-      reasons: r.reasons,
-      mitigations: r.mitigations,
-    }));
-  const impactByIntent = new Map(
-    normalized.impacts.map((impact) => [impact.intent_id ?? "session", impact] as const)
-  );
-  const riskInputs: RiskArtifactInput[] = normalized.risks.map((risk) => {
-    const impact = impactByIntent.get(risk.intent_id ?? "session");
-    return {
-      id: risk.id,
-      level: risk.level,
-      reasons: risk.reasons,
-      scope: {
-        files: impact?.files_touched,
-        modules: impact?.modules_affected,
-      },
-    };
-  });
-  const hotspotInputs: HotspotArtifactInput[] = normalized.hotspots.map((hotspot) => ({
-    id: hotspot.id,
-    file: hotspot.file,
-    score: hotspot.score,
-    reasons: [
-      `edits: ${hotspot.edit_count}`,
-      `lines changed: ${hotspot.lines_changed}`,
-      hotspot.criticality_hits.length > 0
-        ? `criticality: ${hotspot.criticality_hits.join(", ")}`
-        : "no critical directory hit",
-    ],
-  }));
-  const assumptionInputs: AssumptionArtifactInput[] = normalized.assumptions.map((assumption) => {
-    const impact = impactByIntent.get(assumption.intent_id ?? "session");
-    return {
-      id: assumption.event_id,
-      statement: assumption.statement,
-      validated: assumption.validated,
-      risk: assumption.risk,
-      related_files: impact?.files_touched?.slice(0, 4),
-    };
-  });
-  const recommendedActions = generateSuggestions({
-    risks: riskInputs,
-    hotspots: hotspotInputs,
-    assumptions: assumptionInputs,
-  });
+  const highRiskItems = enableProInsights
+    ? normalized.risks
+        .filter((r) => r.level === "high")
+        .sort((a, b) => b.score - a.score)
+        .map((r) => ({
+          intent_id: r.intent_id,
+          level: r.level,
+          score: r.score,
+          reasons: r.reasons,
+          mitigations: r.mitigations,
+        }))
+    : [];
+  const recommendedActions = enableProInsights ? deriveAnalyzerRecommendedActions(normalized) : [];
 
   return {
     goal: normalized.metadata.goal,
@@ -1066,12 +779,20 @@ export function buildReviewerView(normalized: SessionNormalized): ReviewerView {
       intent_id: d.intent_id,
     })),
     high_risk_items: highRiskItems,
-    hotspots: normalized.hotspots.slice(0, 8).map((h) => ({ file: h.file, score: h.score })),
+    hotspots: enableProInsights
+      ? normalized.hotspots.slice(0, 8).map((h) => ({ file: h.file, score: h.score }))
+      : [],
     intent_summaries: intentSummaries,
     verification_summary: verificationSummary,
     token_summary: normalized.metadata.token_usage,
     recommended_actions: recommendedActions,
-    confidence_estimate: deriveConfidence(normalized, verificationSummary),
+    confidence_estimate: enableProInsights
+      ? deriveAnalyzerConfidence(normalized, verificationSummary)
+      : verificationSummary.coverage === "full"
+        ? 0.8
+        : verificationSummary.coverage === "partial"
+          ? 0.6
+          : 0.4,
   };
 }
 
@@ -1085,7 +806,9 @@ export function runAuditPostProcessing(
   config?: Partial<PipelineConfig>
 ): PipelineResult {
   const normalized = normalizeSessionFromRawEvents(rawEvents, config);
-  const reviewer = buildReviewerView(normalized);
+  const reviewer = buildReviewerView(normalized, {
+    enableProInsights: config?.enableProInsights ?? defaultConfig.enableProInsights,
+  });
   return { normalized, reviewer };
 }
 
