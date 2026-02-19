@@ -121,9 +121,9 @@ To reduce agent friction:
 ## Build from source
 
 ```bash
-npm install
-npm run build
-npm start
+pnpm install
+pnpm --filter @al/mcp-server build
+pnpm --filter @al/mcp-server start
 ```
 
 ## Export session JSON

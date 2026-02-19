@@ -1,0 +1,14 @@
+{
+  "name": "agentlens-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "install:all": "pnpm install",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r --if-present lint",
+    "dev:webapp": "pnpm --filter webapp dev",
+    "start:mcp": "pnpm --filter @al/mcp-server mcp",
+    "start:gateway": "pnpm --filter @al/mcp-server start"
+  }
+}

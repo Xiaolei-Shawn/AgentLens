@@ -13,8 +13,8 @@ Local web app for viewing agent session replays. Load a session JSON file (from 
 ## Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm --filter webapp dev
 ```
 
 Open the URL shown (e.g. http://localhost:5173). Drop a session JSON file (e.g. from `../schema/sample-session-rich.json` or from `../sessions/`) to load and replay.
@@ -22,7 +22,7 @@ Open the URL shown (e.g. http://localhost:5173). Drop a session JSON file (e.g. 
 ## Build
 
 ```bash
-npm run build
+pnpm --filter webapp build
 ```
 
 Output is in `dist/`. Serve with any static server or open `dist/index.html` (file://) if the app supports it.
