@@ -1201,7 +1201,7 @@ export function FlowView({
                   const station = `Station ${String(i + 1).padStart(2, "0")}`;
                   const levelTitle = event.kind
                     .split("_")
-                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
                     .join(" ");
                   const cardW = Math.max(112, 290 * p.scale);
                   const cardH = Math.max(44, (shipPerspective && isCurrent ? 132 : 92) * p.scale);
