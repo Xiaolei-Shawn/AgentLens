@@ -17,7 +17,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
     "start": "node dist/index.js start",
     "dev": "tsc && node dist/index.js start",
     "mcp": "node dist/index.js mcp",
@@ -43,13 +44,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-org/AL.git",
+    "url": "git+https://github.com/Xiaolei-Shawn/AgentLens.git",
     "directory": "mcp-server"
   },
   "bugs": {
-    "url": "https://github.com/your-org/AL/issues"
+    "url": "https://github.com/Xiaolei-Shawn/AgentLens/issues"
   },
-  "homepage": "https://github.com/your-org/AL/tree/main/mcp-server#readme",
+  "homepage": "https://github.com/Xiaolei-Shawn/AgentLens/tree/main/mcp-server#readme",
   "publishConfig": {
     "access": "public"
   },
