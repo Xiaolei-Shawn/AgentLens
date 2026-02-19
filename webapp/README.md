@@ -27,17 +27,20 @@ npm run build
 
 Output is in `dist/`. Serve with any static server or open `dist/index.html` (file://) if the app supports it.
 
-## Product editions (OSS vs Pro)
+## Product editions
 
-Set `VITE_AL_PRODUCT_EDITION` at build time:
+All analyzer and recommendation features are open source in this repo.  
+`VITE_AL_PRODUCT_EDITION` is still supported as a UI feature toggle:
 
-- `oss` (default): disables proprietary analyzer insights and falls back to `NodeView` in pivot mode.
-- `pro`: reserved for private builds where proprietary analyzer modules are supplied.
+- `pro` (default): enables perspective pivot and analyzer insights.
+- `oss`: keeps baseline UI behavior for compatibility testing.
 
-Example:
+Examples:
 
 ```bash
-VITE_AL_PRODUCT_EDITION=oss npm run build
+npm run build
+npm run build:oss
+npm run build:pro
 ```
 
 ## Session format

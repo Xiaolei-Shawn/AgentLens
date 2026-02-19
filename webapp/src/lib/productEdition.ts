@@ -1,7 +1,7 @@
 type ProductEdition = "pro" | "oss";
 
 function normalizeEdition(raw: string | undefined): ProductEdition {
-  const value = (raw ?? "oss").trim().toLowerCase();
+  const value = (raw ?? "pro").trim().toLowerCase();
   if (value === "oss" || value === "open-source" || value === "opensource") return "oss";
   return "pro";
 }
