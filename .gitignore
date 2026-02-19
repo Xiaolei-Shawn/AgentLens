@@ -28,6 +28,7 @@ sessions/
 
 .cursor/
 .codex/
+docs/
 
 # Optional: uncomment if you want to ignore session output
 # sessions/*.json
