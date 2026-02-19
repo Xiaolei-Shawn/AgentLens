@@ -27,21 +27,7 @@ npm run build
 
 Output is in `dist/`. Serve with any static server or open `dist/index.html` (file://) if the app supports it.
 
-## Product editions
-
-All analyzer and recommendation features are open source in this repo.  
-`VITE_AL_PRODUCT_EDITION` is still supported as a UI feature toggle:
-
-- `pro` (default): enables perspective pivot and analyzer insights.
-- `oss`: keeps baseline UI behavior for compatibility testing.
-
-Examples:
-
-```bash
-npm run build
-npm run build:oss
-npm run build:pro
-```
+All analyzer and recommendation features are included in this open-source repo.
 
 ## Session format
 

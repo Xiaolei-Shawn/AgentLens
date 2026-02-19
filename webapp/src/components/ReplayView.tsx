@@ -3,7 +3,6 @@ import type { Session } from "../types/session";
 import { getSegments } from "../lib/segments";
 import { getRevisionIndexForEvent } from "../lib/fileEvolution";
 import { runAuditPostProcessing } from "../lib/auditPipeline";
-import { ENABLE_PERSPECTIVE_PIVOT, ENABLE_PRO_ANALYZER } from "../lib/productEdition";
 import { PlanNodesPanel } from "./PlanNodesPanel";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { SegmentDetailView } from "./SegmentDetailView";
@@ -11,7 +10,6 @@ import { FileEvolutionView } from "./FileEvolutionView";
 import { TimelineStrip } from "./TimelineStrip";
 import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
-import { NodeView } from "./NodeView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 
@@ -26,14 +24,9 @@ interface ReplayViewProps {
 
 export function ReplayView({ session, onBack }: ReplayViewProps) {
   const segments = getSegments(session);
-  const isProAnalyzerEnabled = ENABLE_PRO_ANALYZER;
-  const isPerspectivePivotEnabled = ENABLE_PERSPECTIVE_PIVOT;
   const { normalized, reviewer } = useMemo(
-    () =>
-      runAuditPostProcessing(session.events, {
-        enableProInsights: isProAnalyzerEnabled,
-      }),
-    [isProAnalyzerEnabled, session.events]
+    () => runAuditPostProcessing(session.events),
+    [session.events]
   );
 
   const criticalEvents = useMemo(() => {
@@ -103,12 +96,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isProAnalyzerEnabled && timelineTab === "reviewer") {
-      setTimelineTab("session");
-    }
-  }, [isProAnalyzerEnabled, timelineTab]);
 
   // Keep selected plan node and detail view in sync with current event (playback or scrub)
   useEffect(() => {
@@ -259,31 +246,21 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                 type="button"
                 className={timelineTab === "reviewer" ? "active" : ""}
                 onClick={() => setTimelineTab("reviewer")}
-                disabled={!isProAnalyzerEnabled}
-                style={!isProAnalyzerEnabled ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
               >
                 Reviewer
               </button>
             </div>
           )}
           {viewMode === "pivot" && (
-            isPerspectivePivotEnabled ? (
-              <FlowView
-                session={session}
-                currentIndex={currentIndex}
-                onSeek={handleSeek}
-                isPlaying={isPlaying}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                allowPerspective={true}
-              />
-            ) : (
-              <NodeView
-                session={session}
-                currentIndex={currentIndex}
-                onSeek={handleSeek}
-              />
-            )
+            <FlowView
+              session={session}
+              currentIndex={currentIndex}
+              onSeek={handleSeek}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              allowPerspective={true}
+            />
           )}
           {viewMode === "timeline" && (
             <>

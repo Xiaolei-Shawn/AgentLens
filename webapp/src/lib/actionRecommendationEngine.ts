@@ -1,1 +1,1 @@
-export * from "../pro/actionRecommendationEngine";
+export * from "../insights/actionRecommendationEngine";
