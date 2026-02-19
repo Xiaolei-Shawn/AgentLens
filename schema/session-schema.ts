@@ -1,5 +1,5 @@
 /**
- * Canonical session schema — shared contract for MCP, web app, and Remotion.
+ * Canonical session schema — shared contract for MCP and web app tooling.
  * Events are a discriminated union on the `type` field.
  * MCP middleware: file_op emits file_* with content fields; record_plan → plan_step; audit_event → audit_event (audit_type, description).
  */

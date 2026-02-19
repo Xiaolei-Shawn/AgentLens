@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://example.com/session.schema.json",
   "title": "Session",
-  "description": "Canonical session schema for MCP, web app, and Remotion",
+  "description": "Canonical session schema for MCP and web app tooling",
   "type": "object",
   "required": ["id", "started_at", "title", "user_message", "events"],
   "properties": {
