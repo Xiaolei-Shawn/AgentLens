@@ -9,6 +9,8 @@ import {
   getSessionsDir,
   isDashboardEnabled,
 } from "./config.js";
+import { exportSessionJson } from "./store.js";
+import { handleGatewayAct, handleGatewayBeginRun, handleGatewayEndRun } from "./tools.js";
 
 interface SessionFileSummary {
   key: string;
@@ -39,6 +41,42 @@ function json(res: ServerResponse, status: number, payload: unknown): void {
     "cache-control": "no-store",
   });
   res.end(JSON.stringify(payload));
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString("utf-8").trim();
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid JSON body.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Request body must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function parseToolResult(result: unknown): { ok: boolean; payload: unknown; error?: string } {
+  if (!result || typeof result !== "object") {
+    return { ok: false, payload: null, error: "Invalid tool response." };
+  }
+  const tool = result as { isError?: boolean; content?: Array<{ type: string; text?: string }> };
+  const text = tool.content?.[0]?.text;
+  if (tool.isError) {
+    return { ok: false, payload: null, error: text ?? "Tool failed." };
+  }
+  if (!text) return { ok: true, payload: {} };
+  try {
+    return { ok: true, payload: JSON.parse(text) };
+  } catch {
+    return { ok: true, payload: { message: text } };
+  }
 }
 
 function isCanonicalEvent(raw: unknown): raw is CanonicalEvent {
@@ -205,14 +243,14 @@ function safeJoin(root: string, requestPath: string): string | null {
   return joined;
 }
 
-function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string): boolean {
+async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
   if (!pathname.startsWith("/api/")) return false;
-  if (req.method !== "GET") {
-    json(res, 405, { error: "Method not allowed" });
-    return true;
-  }
 
   if (pathname === "/api/health") {
+    if (req.method !== "GET") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
     json(res, 200, {
       ok: true,
       local_only: true,
@@ -223,16 +261,105 @@ function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string):
   }
 
   if (pathname === "/api/sessions") {
+    if (req.method !== "GET") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
     json(res, 200, { sessions: listSessionFiles() });
     return true;
   }
 
+  if (pathname === "/api/gateway/begin") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const parsed = parseToolResult(await handleGatewayBeginRun(body as never));
+      if (!parsed.ok) {
+        json(res, 400, { error: parsed.error });
+        return true;
+      }
+      json(res, 200, parsed.payload);
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/gateway/act") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const parsed = parseToolResult(await handleGatewayAct(body as never));
+      if (!parsed.ok) {
+        json(res, 400, { error: parsed.error });
+        return true;
+      }
+      json(res, 200, parsed.payload);
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/gateway/end") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const parsed = parseToolResult(await handleGatewayEndRun(body as never));
+      if (!parsed.ok) {
+        json(res, 400, { error: parsed.error });
+        return true;
+      }
+      json(res, 200, parsed.payload);
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
   if (pathname.startsWith("/api/sessions/")) {
+    if (req.method !== "GET") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
     const key = decodeURIComponent(pathname.slice("/api/sessions/".length));
     if (!key) {
       json(res, 400, { error: "Missing session key." });
       return true;
     }
+
+    if (key.endsWith("/export")) {
+      const rawKey = key.slice(0, -"/export".length);
+      const summary = listSessionFiles().find((item) => item.key === rawKey || item.session_id === rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      try {
+        const exported = exportSessionJson(summary.session_id);
+        res.writeHead(200, {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "content-disposition": `attachment; filename="${summary.session_id}.session.json"`,
+        });
+        res.end(exported);
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : "Failed to export session.",
+        });
+      }
+      return true;
+    }
+
     const summary = listSessionFiles().find((item) => item.key === key || item.session_id === key);
     if (!summary) {
       json(res, 404, { error: "Session not found." });
@@ -259,41 +386,49 @@ function handleStatic(req: IncomingMessage, res: ServerResponse): void {
   const pathname = url.pathname;
   const webappDir = getDashboardWebappDir();
 
-  if (handleApi(req, res, pathname)) return;
+  handleApi(req, res, pathname)
+    .then((handled) => {
+    if (handled) return;
 
-  if (!existsSync(webappDir)) {
-    serveMissingWebapp(res);
-    return;
-  }
+    if (!existsSync(webappDir)) {
+      serveMissingWebapp(res);
+      return;
+    }
 
-  const relative = pathname === "/" ? "/index.html" : pathname;
-  const resolved = safeJoin(webappDir, relative);
-  if (!resolved) {
-    res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Bad request");
-    return;
-  }
+    const relative = pathname === "/" ? "/index.html" : pathname;
+    const resolved = safeJoin(webappDir, relative);
+    if (!resolved) {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Bad request");
+      return;
+    }
 
-  const hasExt = extname(relative).length > 0;
-  const target = existsSync(resolved) ? resolved : hasExt ? null : join(webappDir, "index.html");
-  if (!target || !existsSync(target)) {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Not found");
-    return;
-  }
+    const hasExt = extname(relative).length > 0;
+    const target = existsSync(resolved) ? resolved : hasExt ? null : join(webappDir, "index.html");
+    if (!target || !existsSync(target)) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
 
-  const body = readFileSync(target);
-  res.writeHead(200, {
-    "content-type": contentType(target),
-    "cache-control": target.endsWith("index.html") ? "no-cache" : "public, max-age=3600",
-  });
-  res.end(body);
+    const body = readFileSync(target);
+    res.writeHead(200, {
+      "content-type": contentType(target),
+      "cache-control": target.endsWith("index.html") ? "no-cache" : "public, max-age=3600",
+    });
+    res.end(body);
+    })
+    .catch((error) => {
+      json(res, 500, {
+        error: error instanceof Error ? error.message : "Unhandled server error.",
+      });
+    });
 }
 
-export function startDashboardServer(): void {
+export function startDashboardServer(): { host: string; port: number } | null {
   if (!isDashboardEnabled()) {
     process.stderr.write("AL dashboard disabled (AL_DASHBOARD_ENABLED=false)\n");
-    return;
+    return null;
   }
 
   const host = getDashboardHost();
@@ -307,4 +442,5 @@ export function startDashboardServer(): void {
   server.on("error", (error) => {
     process.stderr.write(`AL dashboard failed: ${error instanceof Error ? error.message : String(error)}\n`);
   });
+  return { host, port };
 }

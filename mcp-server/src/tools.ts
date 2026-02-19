@@ -10,6 +10,7 @@ import {
   ensureActiveSession,
   initializeSessionLog,
   persistEvent,
+  persistNormalizedSnapshot,
   setActiveIntent,
 } from "./store.js";
 
@@ -19,6 +20,8 @@ type ToolResponse = {
 };
 
 const actor = { type: "agent" as const };
+const AUTO_GOAL = process.env.AL_AUTO_GOAL ?? "Agent task execution";
+const AUTO_PROMPT = process.env.AL_AUTO_USER_PROMPT ?? "Auto-instrumented run";
 
 const sessionStartSchema = z
   .object({
@@ -213,6 +216,33 @@ async function appendCurrentSessionEvent(input: {
   return event;
 }
 
+async function ensureGatewaySession(): Promise<ReturnType<typeof ensureActiveSession>> {
+  const active = getActiveSession();
+  if (active && !active.ended_at) return active;
+  const state = createSession({
+    goal: AUTO_GOAL,
+    user_prompt: AUTO_PROMPT,
+    repo: process.env.AL_AUTO_REPO,
+    branch: process.env.AL_AUTO_BRANCH,
+  });
+  initializeSessionLog(state);
+  const event = createEvent(state, {
+    session_id: state.session_id,
+    kind: "session_start",
+    actor,
+    payload: {
+      goal: state.goal,
+      user_prompt: state.user_prompt,
+      repo: state.repo,
+      branch: state.branch,
+      auto_created: true,
+    },
+    visibility: "review",
+  });
+  await persistEvent(event);
+  return state;
+}
+
 export async function handleRecordSessionStart(
   raw: z.infer<typeof sessionStartSchema>
 ): Promise<ToolResponse> {
@@ -403,6 +433,7 @@ export async function handleRecordSessionEnd(
     });
     await persistEvent(event);
     const ended = await endActiveSession(event.ts);
+    const normalized = await persistNormalizedSnapshot(ended);
     const snapshot = buildSessionLog(ended, [event]);
     return textContent({
       session_id: ended.session_id,
@@ -412,6 +443,7 @@ export async function handleRecordSessionEnd(
       outcome: args.outcome,
       note: "Events are persisted as JSONL per session in AL_SESSIONS_DIR.",
       session_log_preview: snapshot,
+      normalized_snapshot: normalized,
     });
   } catch (err) {
     return errorContent(err);
@@ -499,7 +531,7 @@ export async function handleGatewayBeginRun(
 export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): Promise<ToolResponse> {
   try {
     const args = gatewayActSchema.parse(raw);
-    const state = ensureActiveSession();
+    const state = await ensureGatewaySession();
     const rule = GATEWAY_RULES[args.op];
     const visibility = args.visibility ?? rule.default_visibility;
     const usagePayload = args.usage
@@ -595,6 +627,14 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
 
     if (!args.action) {
       throw new Error(`op=${args.op} requires 'action'.`);
+    }
+
+    if (!state.active_intent_id) {
+      const intent = await appendIntentEvent({
+        title: `Auto intent: ${args.op} ${args.action}`.trim(),
+        description: "Created automatically by gateway_act",
+      });
+      setActiveIntent(intent.intent_id);
     }
 
     const kind = args.op === "file" ? "file_op" : "tool_call";
