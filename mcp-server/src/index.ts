@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { startDashboardServer } from "./dashboard.js";
 import { exportSessionJson, listSessionFiles } from "./store.js";
+import { ingestRawFile } from "./ingest.js";
 import {
   handleGatewayAct,
   handleGatewayBeginRun,
@@ -316,6 +317,22 @@ function runExport(): void {
   process.stdout.write(exported + "\n");
 }
 
+function runIngest(): void {
+  const input = parseFlag("--input");
+  if (!input) {
+    throw new Error("Missing required --input <path>.");
+  }
+  const adapter = parseFlag("--adapter") ?? "auto";
+  const mergeSession = parseFlag("--merge-session");
+  const noDedupe = process.argv.includes("--no-dedupe");
+  const result = ingestRawFile(resolve(input), {
+    adapter,
+    merge_session_id: mergeSession,
+    dedupe: !noDedupe,
+  });
+  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "mcp";
   if (command === "start") {
@@ -326,6 +343,10 @@ async function main(): Promise<void> {
     runExport();
     return;
   }
+  if (command === "ingest") {
+    runIngest();
+    return;
+  }
   if (command === "mcp") {
     await runMcpServer();
     return;
@@ -334,7 +355,8 @@ async function main(): Promise<void> {
     "Usage:\n" +
       "  agentlens start [--open]\n" +
       "  agentlens mcp\n" +
-      "  agentlens export [--latest|--session <id>] [--out <path>]\n"
+      "  agentlens export [--latest|--session <id>] [--out <path>]\n" +
+      "  agentlens ingest --input <raw.jsonl> [--adapter auto|codex_jsonl] [--merge-session <id>] [--no-dedupe]\n"
   );
   process.exitCode = 1;
 }

@@ -24,6 +24,7 @@ You can point the built-in dashboard server to any static bundle via `AL_DASHBOA
 - Session storage on local disk (`AL_SESSIONS_DIR`)
 - Local gateway API for middleware (`/api/gateway/*`)
 - Export session JSON with normalized snapshot (`agentlens export`)
+- Raw log adapter ingestion (`agentlens ingest`, `/api/ingest`) with duplicate suppression
 
 ## Install
 
@@ -92,6 +93,7 @@ API endpoints:
 - `POST /api/gateway/begin`
 - `POST /api/gateway/act`
 - `POST /api/gateway/end`
+- `POST /api/ingest`
 
 If web assets are available (default `../webapp/dist`), they are served by the same server.
 
@@ -151,6 +153,26 @@ Export by session id:
 ```bash
 agentlens export --session sess_1771256059058_2bd2bd8f --out ./session.json
 ```
+
+## Ingest raw logs via adapters
+
+Example: ingest Codex raw JSONL and convert to canonical events:
+
+```bash
+agentlens ingest --input /path/to/rollout.jsonl --adapter codex_jsonl
+```
+
+Auto-detect adapter and merge into an existing session with dedupe:
+
+```bash
+agentlens ingest --input /path/to/raw.jsonl --adapter auto --merge-session sess_123
+```
+
+Notes:
+
+- Ingest writes canonical events to `<session_id>.jsonl`.
+- Original raw content is preserved in `<session_id>.<adapter>.raw.jsonl`.
+- Duplicate events are skipped by default (same kind/timestamp/actor/scope/payload signature).
 
 ## Publish checklist
 

@@ -11,6 +11,7 @@ import {
 } from "./config.js";
 import { exportSessionJson } from "./store.js";
 import { handleGatewayAct, handleGatewayBeginRun, handleGatewayEndRun } from "./tools.js";
+import { ingestRawContent } from "./ingest.js";
 
 interface SessionFileSummary {
   key: string;
@@ -320,6 +321,33 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return true;
       }
       json(res, 200, parsed.payload);
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/ingest") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const raw = typeof body.raw === "string" ? body.raw : "";
+      if (!raw.trim()) {
+        json(res, 400, { error: "Missing `raw` content." });
+        return true;
+      }
+      const result = ingestRawContent(raw, {
+        adapter: typeof body.adapter === "string" ? body.adapter : "auto",
+        merge_session_id:
+          typeof body.merge_session_id === "string" && body.merge_session_id.trim() !== ""
+            ? body.merge_session_id
+            : undefined,
+        dedupe: body.dedupe === false ? false : true,
+      });
+      json(res, 200, result);
     } catch (error) {
       json(res, 400, { error: error instanceof Error ? error.message : String(error) });
     }
