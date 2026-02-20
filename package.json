@@ -8,7 +8,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r --if-present lint",
     "dev:webapp": "pnpm --filter webapp dev",
-    "start:mcp": "pnpm --filter @xiaolei-shawn/mcp-server mcp",
-    "start:gateway": "pnpm --filter @xiaolei-shawn/mcp-server start"
+    "start:mcp": "pnpm --filter @xiaolei.shawn/mcp-server mcp",
+    "start:gateway": "pnpm --filter @xiaolei.shawn/mcp-server start"
   }
 }

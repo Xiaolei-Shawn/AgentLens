@@ -1,4 +1,4 @@
-# @xiaolei-shawn/mcp-server
+# @xiaolei.shawn/mcp-server
 
 Local-first MCP server for AI agent session auditing.
 
@@ -28,7 +28,7 @@ You can point the built-in dashboard server to any static bundle via `AL_DASHBOA
 ## Install
 
 ```bash
-npm install @xiaolei-shawn/mcp-server
+npm install @xiaolei.shawn/mcp-server
 ```
 
 ## Run
@@ -122,8 +122,8 @@ To reduce agent friction:
 
 ```bash
 pnpm install
-pnpm --filter @xiaolei-shawn/mcp-server build
-pnpm --filter @xiaolei-shawn/mcp-server start
+pnpm --filter @xiaolei.shawn/mcp-server build
+pnpm --filter @xiaolei.shawn/mcp-server start
 ```
 
 ## Export session JSON

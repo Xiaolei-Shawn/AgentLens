@@ -1,5 +1,5 @@
 {
-  "name": "@xiaolei-shawn/schema",
+  "name": "@xiaolei.shawn/schema",
   "version": "0.1.0",
   "description": "Session schema and validation for AL MCP and extension",
   "type": "module",

@@ -42,7 +42,7 @@ importers:
 
   webapp:
     dependencies:
-      '@xiaolei-shawn/schema':
+      '@xiaolei.shawn/schema':
         specifier: workspace:*
         version: link:../schema
       ajv:

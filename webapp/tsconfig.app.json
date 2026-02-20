@@ -7,7 +7,7 @@
     "module": "ESNext",
     "baseUrl": ".",
     "paths": {
-      "@xiaolei-shawn/schema/*": ["../schema/*"]
+      "@xiaolei.shawn/schema/*": ["../schema/*"]
     },
     "types": ["vite/client"],
     "skipLibCheck": true,

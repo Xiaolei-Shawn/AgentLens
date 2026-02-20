@@ -1,4 +1,4 @@
-import type { CanonicalEvent } from "@xiaolei-shawn/schema/event-envelope";
+import type { CanonicalEvent } from "@xiaolei.shawn/schema/event-envelope";
 
 export interface Session {
   id: string;
