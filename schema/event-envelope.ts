@@ -1,11 +1,33 @@
 export type ActorType = "agent" | "user" | "system" | "tool";
+export type EventVisibility = "raw" | "review" | "debug";
+export type EventKind =
+  | "session_start"
+  | "intent"
+  | "file_op"
+  | "tool_call"
+  | "decision"
+  | "assumption"
+  | "verification"
+  | "session_end"
+  | "artifact_created"
+  | "intent_transition"
+  | "risk_signal"
+  | "verification_run"
+  | "diff_summary"
+  | "decision_link"
+  | "assumption_lifecycle"
+  | "blocker"
+  | "token_usage_checkpoint"
+  | "session_quality"
+  | "replay_bookmark"
+  | "hotspot";
 
 export interface CanonicalEvent {
   id: string;
   session_id: string;
   seq: number;
   ts: string;
-  kind: string;
+  kind: EventKind;
   actor: {
     type: ActorType;
     id?: string;
@@ -18,7 +40,7 @@ export interface CanonicalEvent {
   payload: Record<string, unknown>;
   derived?: boolean;
   confidence?: number;
-  visibility?: "raw" | "review" | "debug";
+  visibility?: EventVisibility;
   schema_version: number;
 }
 
@@ -34,4 +56,3 @@ export interface SessionLogFile {
   ended_at?: string;
   events: CanonicalEvent[];
 }
-

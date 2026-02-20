@@ -12,12 +12,24 @@ import {
   handleGatewayBeginRun,
   handleGatewayEndRun,
   handleRecordActivity,
+  handleRecordArtifactCreated,
   handleRecordAssumption,
+  handleRecordAssumptionLifecycle,
+  handleRecordBlocker,
+  handleRecordDecisionLink,
+  handleRecordDiffSummary,
   handleRecordDecision,
+  handleRecordHotspot,
   handleRecordIntent,
+  handleRecordIntentTransition,
+  handleRecordReplayBookmark,
+  handleRecordRiskSignal,
+  handleRecordSessionQuality,
   handleRecordSessionEnd,
   handleRecordSessionStart,
+  handleRecordTokenUsageCheckpoint,
   handleRecordVerification,
+  handleRecordVerificationRun,
   toolSchemas,
 } from "./tools.js";
 
@@ -101,6 +113,114 @@ function registerTools(server: McpServer): void {
       inputSchema: toolSchemas.record_verification.inputSchema,
     },
     handleRecordVerification
+  );
+
+  server.registerTool(
+    "record_artifact_created",
+    {
+      description: "Record created deliverables/artifacts such as patch, report, migration, or test.",
+      inputSchema: toolSchemas.record_artifact_created.inputSchema,
+    },
+    handleRecordArtifactCreated
+  );
+
+  server.registerTool(
+    "record_intent_transition",
+    {
+      description: "Record transition between workflow phases/intents.",
+      inputSchema: toolSchemas.record_intent_transition.inputSchema,
+    },
+    handleRecordIntentTransition
+  );
+
+  server.registerTool(
+    "record_risk_signal",
+    {
+      description: "Record explicit risk signal with severity and reasons.",
+      inputSchema: toolSchemas.record_risk_signal.inputSchema,
+    },
+    handleRecordRiskSignal
+  );
+
+  server.registerTool(
+    "record_verification_run",
+    {
+      description: "Record lifecycle of a verification run (started/completed/failed).",
+      inputSchema: toolSchemas.record_verification_run.inputSchema,
+    },
+    handleRecordVerificationRun
+  );
+
+  server.registerTool(
+    "record_diff_summary",
+    {
+      description: "Record compact file diff/impact summary signal.",
+      inputSchema: toolSchemas.record_diff_summary.inputSchema,
+    },
+    handleRecordDiffSummary
+  );
+
+  server.registerTool(
+    "record_decision_link",
+    {
+      description: "Link a decision event to impacted files/events.",
+      inputSchema: toolSchemas.record_decision_link.inputSchema,
+    },
+    handleRecordDecisionLink
+  );
+
+  server.registerTool(
+    "record_assumption_lifecycle",
+    {
+      description: "Track assumption lifecycle states from created to validated/invalidated.",
+      inputSchema: toolSchemas.record_assumption_lifecycle.inputSchema,
+    },
+    handleRecordAssumptionLifecycle
+  );
+
+  server.registerTool(
+    "record_blocker",
+    {
+      description: "Record blockers and optional resolution details.",
+      inputSchema: toolSchemas.record_blocker.inputSchema,
+    },
+    handleRecordBlocker
+  );
+
+  server.registerTool(
+    "record_token_usage_checkpoint",
+    {
+      description: "Record token/cost checkpoint for cost and efficiency analysis.",
+      inputSchema: toolSchemas.record_token_usage_checkpoint.inputSchema,
+    },
+    handleRecordTokenUsageCheckpoint
+  );
+
+  server.registerTool(
+    "record_session_quality",
+    {
+      description: "Record derived session quality score and summary metrics.",
+      inputSchema: toolSchemas.record_session_quality.inputSchema,
+    },
+    handleRecordSessionQuality
+  );
+
+  server.registerTool(
+    "record_replay_bookmark",
+    {
+      description: "Record replay bookmarks for key moments in timeline.",
+      inputSchema: toolSchemas.record_replay_bookmark.inputSchema,
+    },
+    handleRecordReplayBookmark
+  );
+
+  server.registerTool(
+    "record_hotspot",
+    {
+      description: "Record file/module hotspot ranking signal.",
+      inputSchema: toolSchemas.record_hotspot.inputSchema,
+    },
+    handleRecordHotspot
   );
 
   server.registerTool(

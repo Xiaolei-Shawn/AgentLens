@@ -55,6 +55,18 @@ agentlens mcp
 - `record_decision`
 - `record_assumption`
 - `record_verification`
+- `record_artifact_created`
+- `record_intent_transition`
+- `record_risk_signal`
+- `record_verification_run`
+- `record_diff_summary`
+- `record_decision_link`
+- `record_assumption_lifecycle`
+- `record_blocker`
+- `record_token_usage_checkpoint`
+- `record_session_quality`
+- `record_replay_bookmark`
+- `record_hotspot`
 - `record_session_end`
 
 ### Gateway tools

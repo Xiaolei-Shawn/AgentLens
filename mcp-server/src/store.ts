@@ -6,6 +6,7 @@ import {
   EVENT_SCHEMA_VERSION,
   type ActorType,
   type CanonicalEvent,
+  type EventKind,
   type SessionLogFile,
 } from "./event-envelope.js";
 
@@ -134,7 +135,7 @@ export function setActiveIntent(intentId: string): void {
 
 export interface CreateEventInput {
   session_id: string;
-  kind: string;
+  kind: EventKind;
   actor: {
     type: ActorType;
     id?: string;

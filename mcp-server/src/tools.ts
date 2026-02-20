@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import * as z from "zod";
-import type { CanonicalEvent } from "./event-envelope.js";
+import type { CanonicalEvent, EventKind, EventVisibility } from "./event-envelope.js";
 import {
   buildSessionLog,
   createEvent,
@@ -75,6 +75,126 @@ const verificationSchema = z
   })
   .strict();
 
+const artifactCreatedSchema = z
+  .object({
+    artifact_type: z.enum(["file", "patch", "report", "pr", "migration", "test", "build", "other"]),
+    title: z.string().min(1),
+    path: z.string().min(1).optional(),
+    url: z.string().url().optional(),
+    details: z.record(z.unknown()).optional(),
+  })
+  .strict();
+
+const intentTransitionSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    reason: z.string().optional(),
+  })
+  .strict();
+
+const riskSignalSchema = z
+  .object({
+    level: z.enum(["low", "medium", "high"]),
+    reasons: z.array(z.string().min(1)).min(1),
+    files: z.array(z.string().min(1)).optional(),
+    modules: z.array(z.string().min(1)).optional(),
+    mitigation_hint: z.string().optional(),
+  })
+  .strict();
+
+const verificationRunSchema = z
+  .object({
+    run_type: z.enum(["test", "lint", "typecheck", "manual", "build"]),
+    status: z.enum(["started", "completed", "failed"]),
+    command: z.string().min(1).optional(),
+    scope: z.string().optional(),
+    result: z.enum(["pass", "fail", "unknown"]).optional(),
+    duration_ms: z.number().nonnegative().optional(),
+  })
+  .strict();
+
+const diffSummarySchema = z
+  .object({
+    file: z.string().min(1),
+    lines_added: z.number().int().nonnegative().optional(),
+    lines_removed: z.number().int().nonnegative().optional(),
+    public_api_changed: z.boolean().optional(),
+    dependency_changed: z.boolean().optional(),
+    schema_changed: z.boolean().optional(),
+  })
+  .strict();
+
+const decisionLinkSchema = z
+  .object({
+    decision_event_id: z.string().min(1),
+    summary: z.string().min(1),
+    affected_files: z.array(z.string().min(1)).optional(),
+    related_event_ids: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+const assumptionLifecycleSchema = z
+  .object({
+    statement: z.string().min(1),
+    state: z.enum(["created", "validated", "invalidated", "unresolved"]),
+    risk: z.enum(["low", "medium", "high"]).optional(),
+    related_files: z.array(z.string().min(1)).optional(),
+    details: z.string().optional(),
+  })
+  .strict();
+
+const blockerSchema = z
+  .object({
+    code: z.string().min(1),
+    summary: z.string().min(1),
+    severity: z.enum(["low", "medium", "high"]).default("medium"),
+    resolved: z.boolean().optional(),
+    resolution: z.string().optional(),
+  })
+  .strict();
+
+const tokenUsageCheckpointSchema = z
+  .object({
+    category: z.string().optional(),
+    model: z.string().optional(),
+    prompt_tokens: z.number().int().nonnegative().optional(),
+    completion_tokens: z.number().int().nonnegative().optional(),
+    total_tokens: z.number().int().nonnegative().optional(),
+    estimated_cost_usd: z.number().nonnegative().optional(),
+  })
+  .strict();
+
+const sessionQualitySchema = z
+  .object({
+    score: z.number().min(0).max(100),
+    verification_coverage: z.enum(["none", "partial", "full"]).optional(),
+    unresolved_risks: z.number().int().nonnegative().optional(),
+    notes: z.string().optional(),
+  })
+  .strict();
+
+const replayBookmarkSchema = z
+  .object({
+    label: z.string().min(1),
+    event_id: z.string().optional(),
+    seq: z.number().int().positive().optional(),
+    priority: z.enum(["low", "medium", "high"]).optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
+const hotspotSchema = z
+  .object({
+    file: z.string().min(1),
+    score: z.number().nonnegative(),
+    reasons: z.array(z.string().min(1)).optional(),
+    module: z.string().optional(),
+    edit_count: z.number().int().nonnegative().optional(),
+    lines_changed: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 const sessionEndSchema = z
   .object({
     outcome: z.enum(["completed", "partial", "failed", "aborted"]),
@@ -105,6 +225,18 @@ const gatewayActSchema = z
       "decision",
       "assumption",
       "verification",
+      "artifact_created",
+      "intent_transition",
+      "risk_signal",
+      "verification_run",
+      "diff_summary",
+      "decision_link",
+      "assumption_lifecycle",
+      "blocker",
+      "token_usage_checkpoint",
+      "session_quality",
+      "replay_bookmark",
+      "hotspot",
     ]),
     action: z.string().min(1).optional(),
     target: z.string().min(1).optional(),
@@ -123,6 +255,18 @@ const gatewayActSchema = z
     decision: decisionSchema.optional(),
     assumption: assumptionSchema.optional(),
     verification: verificationSchema.optional(),
+    artifact_created: artifactCreatedSchema.optional(),
+    intent_transition: intentTransitionSchema.optional(),
+    risk_signal: riskSignalSchema.optional(),
+    verification_run: verificationRunSchema.optional(),
+    diff_summary: diffSummarySchema.optional(),
+    decision_link: decisionLinkSchema.optional(),
+    assumption_lifecycle: assumptionLifecycleSchema.optional(),
+    blocker: blockerSchema.optional(),
+    token_usage_checkpoint: tokenUsageCheckpointSchema.optional(),
+    session_quality: sessionQualitySchema.optional(),
+    replay_bookmark: replayBookmarkSchema.optional(),
+    hotspot: hotspotSchema.optional(),
     visibility: z.enum(["raw", "review", "debug"]).optional(),
   })
   .strict();
@@ -178,6 +322,78 @@ export const GATEWAY_RULES = {
     required_fields: ["verification.type", "verification.result"] as const,
     default_visibility: "review" as const,
   },
+  artifact_created: {
+    maps_to_tool: "record_artifact_created",
+    emits_kind: "artifact_created",
+    required_fields: ["artifact_created.title"] as const,
+    default_visibility: "review" as const,
+  },
+  intent_transition: {
+    maps_to_tool: "record_intent_transition",
+    emits_kind: "intent_transition",
+    required_fields: ["intent_transition.from", "intent_transition.to"] as const,
+    default_visibility: "review" as const,
+  },
+  risk_signal: {
+    maps_to_tool: "record_risk_signal",
+    emits_kind: "risk_signal",
+    required_fields: ["risk_signal.level", "risk_signal.reasons"] as const,
+    default_visibility: "review" as const,
+  },
+  verification_run: {
+    maps_to_tool: "record_verification_run",
+    emits_kind: "verification_run",
+    required_fields: ["verification_run.run_type", "verification_run.status"] as const,
+    default_visibility: "review" as const,
+  },
+  diff_summary: {
+    maps_to_tool: "record_diff_summary",
+    emits_kind: "diff_summary",
+    required_fields: ["diff_summary.file"] as const,
+    default_visibility: "raw" as const,
+  },
+  decision_link: {
+    maps_to_tool: "record_decision_link",
+    emits_kind: "decision_link",
+    required_fields: ["decision_link.decision_event_id", "decision_link.summary"] as const,
+    default_visibility: "review" as const,
+  },
+  assumption_lifecycle: {
+    maps_to_tool: "record_assumption_lifecycle",
+    emits_kind: "assumption_lifecycle",
+    required_fields: ["assumption_lifecycle.statement", "assumption_lifecycle.state"] as const,
+    default_visibility: "review" as const,
+  },
+  blocker: {
+    maps_to_tool: "record_blocker",
+    emits_kind: "blocker",
+    required_fields: ["blocker.code", "blocker.summary"] as const,
+    default_visibility: "review" as const,
+  },
+  token_usage_checkpoint: {
+    maps_to_tool: "record_token_usage_checkpoint",
+    emits_kind: "token_usage_checkpoint",
+    required_fields: [] as const,
+    default_visibility: "raw" as const,
+  },
+  session_quality: {
+    maps_to_tool: "record_session_quality",
+    emits_kind: "session_quality",
+    required_fields: ["session_quality.score"] as const,
+    default_visibility: "review" as const,
+  },
+  replay_bookmark: {
+    maps_to_tool: "record_replay_bookmark",
+    emits_kind: "replay_bookmark",
+    required_fields: ["replay_bookmark.label"] as const,
+    default_visibility: "review" as const,
+  },
+  hotspot: {
+    maps_to_tool: "record_hotspot",
+    emits_kind: "hotspot",
+    required_fields: ["hotspot.file", "hotspot.score"] as const,
+    default_visibility: "review" as const,
+  },
 } as const;
 
 function textContent(value: unknown): ToolResponse {
@@ -194,14 +410,14 @@ function errorContent(error: unknown): ToolResponse {
 }
 
 async function appendCurrentSessionEvent(input: {
-  kind: string;
+  kind: EventKind;
   payload: Record<string, unknown>;
   scope?: {
     intent_id?: string;
     file?: string;
     module?: string;
   };
-  visibility?: "raw" | "review" | "debug";
+  visibility?: EventVisibility;
 }): Promise<CanonicalEvent> {
   const state = ensureActiveSession();
   const event = createEvent(state, {
@@ -410,6 +626,234 @@ export async function handleRecordVerification(
       seq: event.seq,
       ts: event.ts,
     });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordArtifactCreated(
+  raw: z.infer<typeof artifactCreatedSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = artifactCreatedSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "artifact_created",
+      payload: {
+        artifact_type: args.artifact_type,
+        title: args.title,
+        path: args.path,
+        url: args.url,
+        details: args.details ?? {},
+      },
+      scope: { intent_id: state.active_intent_id, file: args.path },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordIntentTransition(
+  raw: z.infer<typeof intentTransitionSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = intentTransitionSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "intent_transition",
+      payload: args,
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordRiskSignal(
+  raw: z.infer<typeof riskSignalSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = riskSignalSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "risk_signal",
+      payload: {
+        level: args.level,
+        reasons: args.reasons,
+        files: args.files ?? [],
+        modules: args.modules ?? [],
+        mitigation_hint: args.mitigation_hint,
+      },
+      scope: {
+        intent_id: state.active_intent_id,
+        file: args.files?.[0],
+        module: args.modules?.[0],
+      },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordVerificationRun(
+  raw: z.infer<typeof verificationRunSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = verificationRunSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "verification_run",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, module: args.scope },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordDiffSummary(
+  raw: z.infer<typeof diffSummarySchema>
+): Promise<ToolResponse> {
+  try {
+    const args = diffSummarySchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "diff_summary",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, file: args.file },
+      visibility: "raw",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordDecisionLink(
+  raw: z.infer<typeof decisionLinkSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = decisionLinkSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "decision_link",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, file: args.affected_files?.[0] },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordAssumptionLifecycle(
+  raw: z.infer<typeof assumptionLifecycleSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = assumptionLifecycleSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "assumption_lifecycle",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, file: args.related_files?.[0] },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordBlocker(raw: z.infer<typeof blockerSchema>): Promise<ToolResponse> {
+  try {
+    const args = blockerSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "blocker",
+      payload: args,
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordTokenUsageCheckpoint(
+  raw: z.infer<typeof tokenUsageCheckpointSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = tokenUsageCheckpointSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "token_usage_checkpoint",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, module: args.category },
+      visibility: "raw",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordSessionQuality(
+  raw: z.infer<typeof sessionQualitySchema>
+): Promise<ToolResponse> {
+  try {
+    const args = sessionQualitySchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "session_quality",
+      payload: args,
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordReplayBookmark(
+  raw: z.infer<typeof replayBookmarkSchema>
+): Promise<ToolResponse> {
+  try {
+    const args = replayBookmarkSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "replay_bookmark",
+      payload: args,
+      scope: { intent_id: state.active_intent_id },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
+  } catch (err) {
+    return errorContent(err);
+  }
+}
+
+export async function handleRecordHotspot(raw: z.infer<typeof hotspotSchema>): Promise<ToolResponse> {
+  try {
+    const args = hotspotSchema.parse(raw);
+    const state = ensureActiveSession();
+    const event = await appendCurrentSessionEvent({
+      kind: "hotspot",
+      payload: args,
+      scope: { intent_id: state.active_intent_id, file: args.file, module: args.module },
+      visibility: "review",
+    });
+    return textContent({ event_id: event.id, seq: event.seq, ts: event.ts });
   } catch (err) {
     return errorContent(err);
   }
@@ -625,6 +1069,145 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
       });
     }
 
+    if (args.op === "artifact_created") {
+      if (!args.artifact_created) throw new Error("op=artifact_created requires `artifact_created` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "artifact_created",
+        payload: args.artifact_created,
+        scope: {
+          intent_id: state.active_intent_id,
+          file: args.artifact_created.path,
+        },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "intent_transition") {
+      if (!args.intent_transition) throw new Error("op=intent_transition requires `intent_transition` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "intent_transition",
+        payload: args.intent_transition,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "risk_signal") {
+      if (!args.risk_signal) throw new Error("op=risk_signal requires `risk_signal` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "risk_signal",
+        payload: args.risk_signal,
+        scope: {
+          intent_id: state.active_intent_id,
+          file: args.risk_signal.files?.[0],
+          module: args.risk_signal.modules?.[0],
+        },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "verification_run") {
+      if (!args.verification_run) throw new Error("op=verification_run requires `verification_run` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "verification_run",
+        payload: args.verification_run,
+        scope: { intent_id: state.active_intent_id, module: args.verification_run.scope },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "diff_summary") {
+      if (!args.diff_summary) throw new Error("op=diff_summary requires `diff_summary` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "diff_summary",
+        payload: args.diff_summary,
+        scope: { intent_id: state.active_intent_id, file: args.diff_summary.file },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "decision_link") {
+      if (!args.decision_link) throw new Error("op=decision_link requires `decision_link` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "decision_link",
+        payload: args.decision_link,
+        scope: { intent_id: state.active_intent_id, file: args.decision_link.affected_files?.[0] },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "assumption_lifecycle") {
+      if (!args.assumption_lifecycle) throw new Error("op=assumption_lifecycle requires `assumption_lifecycle` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "assumption_lifecycle",
+        payload: args.assumption_lifecycle,
+        scope: { intent_id: state.active_intent_id, file: args.assumption_lifecycle.related_files?.[0] },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "blocker") {
+      if (!args.blocker) throw new Error("op=blocker requires `blocker` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "blocker",
+        payload: args.blocker,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "token_usage_checkpoint") {
+      if (!args.token_usage_checkpoint) throw new Error("op=token_usage_checkpoint requires `token_usage_checkpoint` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "token_usage_checkpoint",
+        payload: args.token_usage_checkpoint,
+        scope: { intent_id: state.active_intent_id, module: args.token_usage_checkpoint.category },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "session_quality") {
+      if (!args.session_quality) throw new Error("op=session_quality requires `session_quality` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "session_quality",
+        payload: args.session_quality,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "replay_bookmark") {
+      if (!args.replay_bookmark) throw new Error("op=replay_bookmark requires `replay_bookmark` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "replay_bookmark",
+        payload: args.replay_bookmark,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "hotspot") {
+      if (!args.hotspot) throw new Error("op=hotspot requires `hotspot` payload.");
+      const event = await appendCurrentSessionEvent({
+        kind: "hotspot",
+        payload: args.hotspot,
+        scope: { intent_id: state.active_intent_id, file: args.hotspot.file, module: args.hotspot.module },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
     if (!args.action) {
       throw new Error(`op=${args.op} requires 'action'.`);
     }
@@ -712,6 +1295,18 @@ export const toolSchemas = {
   record_decision: { inputSchema: decisionSchema.shape },
   record_assumption: { inputSchema: assumptionSchema.shape },
   record_verification: { inputSchema: verificationSchema.shape },
+  record_artifact_created: { inputSchema: artifactCreatedSchema.shape },
+  record_intent_transition: { inputSchema: intentTransitionSchema.shape },
+  record_risk_signal: { inputSchema: riskSignalSchema.shape },
+  record_verification_run: { inputSchema: verificationRunSchema.shape },
+  record_diff_summary: { inputSchema: diffSummarySchema.shape },
+  record_decision_link: { inputSchema: decisionLinkSchema.shape },
+  record_assumption_lifecycle: { inputSchema: assumptionLifecycleSchema.shape },
+  record_blocker: { inputSchema: blockerSchema.shape },
+  record_token_usage_checkpoint: { inputSchema: tokenUsageCheckpointSchema.shape },
+  record_session_quality: { inputSchema: sessionQualitySchema.shape },
+  record_replay_bookmark: { inputSchema: replayBookmarkSchema.shape },
+  record_hotspot: { inputSchema: hotspotSchema.shape },
   record_session_end: { inputSchema: sessionEndSchema.shape },
   gateway_begin_run: { inputSchema: gatewayBeginSchema.shape },
   gateway_act: { inputSchema: gatewayActSchema.shape },
