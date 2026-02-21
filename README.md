@@ -34,3 +34,13 @@ npx @xiaolei.shawn/mcp-server mcp
 pnpm install
 pnpm -r build
 ```
+
+## Integration Check
+
+Run a full compatibility check (schema + mcp-server + webapp):
+
+```bash
+pnpm run verify:integration
+```
+
+This command builds all packages, starts MCP server locally, verifies key API endpoints, and checks dashboard static serving.

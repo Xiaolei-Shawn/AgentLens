@@ -10,6 +10,7 @@
     "dev:webapp": "pnpm --filter webapp dev",
     "start:mcp": "pnpm --filter @xiaolei.shawn/mcp-server mcp",
     "start:gateway": "pnpm --filter @xiaolei.shawn/mcp-server start",
+    "verify:integration": "node ./scripts/verify-integration.mjs",
     "ingest": "pnpm --filter @xiaolei.shawn/mcp-server ingest",
     "ingest:auto": "pnpm --filter @xiaolei.shawn/mcp-server ingest:auto",
     "ingest:codex": "pnpm --filter @xiaolei.shawn/mcp-server ingest:codex",

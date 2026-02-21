@@ -1,0 +1,7 @@
+<user_query>Add a unit test for the ingest merge logic</user_query>
+<think>I'll look at the ingest module and add a test that covers merge and dedupe.
+</think>
+Tool call: read_file path=src/ingest.ts
+Tool result: (contents of src/ingest.ts)
+Tool call: read_file path=src/store.ts
+Tool result: (contents of src/store.ts)

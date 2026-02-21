@@ -178,13 +178,15 @@ Notes:
 
 - Ingest writes canonical events to `<session_id>.jsonl`.
 - Original raw content is preserved in `<session_id>.<adapter>.raw.jsonl`.
-- Duplicate events are skipped by default (same kind/timestamp/actor/scope/payload signature).
+- **Merge and dedupe**: When merging into an existing session (e.g. raw log + MCP-canonical events), ingest uses **semantic dedupe** so the same logical event (intent, tool call, artifact, etc.) is not duplicated even if timestamps or payload details differ. Merged events are written in **time order** with contiguous `seq` for accurate recommendations/risk/hotspot analysis.
+- Duplicate events are skipped by default (exact or semantic key depending on merge).
 - Codex adapter preserves user prompts, reasoning summaries, assistant outputs, tool calls/results, and normalized token checkpoints.
 - Cursor adapter preserves user queries, `<think>` reasoning traces, tool call/result traces, and token counters when present.
-- If `--merge-session` is omitted, ingest attempts `merge-session-by-fingerprint` automatically:
+- If `--merge-session` is omitted, ingest attempts **fingerprint match** automatically:
   - Primary signal: normalized user prompt / intent similarity
   - Secondary signal: timestamp proximity (recent sessions weighted higher)
-  - Safety threshold is applied; if confidence is low, a new session is created instead.
+  - Min confidence: `AL_INGEST_FINGERPRINT_MIN_CONFIDENCE` (default `0.62`)
+  - Max time window (hours): `AL_INGEST_FINGERPRINT_MAX_WINDOW_HOURS` (default `72`)
 - Ingest output includes `merge_strategy` (`explicit_merge`, `adapted_session_id`, `fingerprint_match`, `new_session`) and optional `merge_confidence`.
 
 ## Publish checklist

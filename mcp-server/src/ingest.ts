@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { getSessionsDir } from "./config.js";
+import { getIngestFingerprintMaxWindowHours, getIngestFingerprintMinConfidence, getSessionsDir } from "./config.js";
 import { adaptRawContent } from "./adapters/index.js";
 import type { AdaptedEvent, AdaptedSession } from "./adapters/types.js";
 import type { CanonicalEvent } from "./event-envelope.js";
@@ -11,6 +11,7 @@ function safeFilename(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+/** Exact key: same kind, ts, actor, scope, payload (for strict dedupe within same source). */
 function dedupeKey(event: Pick<CanonicalEvent, "kind" | "ts" | "actor" | "scope" | "payload">): string {
   return JSON.stringify([
     event.kind,
@@ -19,6 +20,67 @@ function dedupeKey(event: Pick<CanonicalEvent, "kind" | "ts" | "actor" | "scope"
     event.actor.id ?? "",
     event.scope ?? {},
     event.payload ?? {},
+  ]);
+}
+
+/** Ts rounded to 2-minute bucket for semantic matching (MCP vs adapter may differ by seconds). */
+function tsBucket(ts: string): string {
+  const ms = new Date(ts).getTime();
+  if (Number.isNaN(ms)) return ts;
+  const bucket = Math.floor(ms / (2 * 60 * 1000)) * (2 * 60 * 1000);
+  return new Date(bucket).toISOString();
+}
+
+/** Normalize text for semantic key: lowercase, collapse spaces, truncate. */
+function semanticNorm(value: string | undefined, max = 400): string {
+  if (!value || typeof value !== "string") return "";
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/**
+ * Semantic key for merge dedupe: same logical event from MCP vs adapter should match
+ * so we keep one (prefer existing) and don't double-count for recommendations/risk.
+ */
+function semanticDedupeKey(event: CanonicalEvent): string {
+  const kind = event.kind;
+  const ts = tsBucket(event.ts);
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const scope = event.scope ?? {};
+
+  if (kind === "session_start" || kind === "session_end") {
+    return `${kind}`;
+  }
+  if (kind === "intent") {
+    const desc = semanticNorm(String(payload.description ?? payload.title ?? ""));
+    return `intent:${desc}`;
+  }
+  if (kind === "tool_call") {
+    const action = semanticNorm(String(payload.action ?? ""), 80);
+    const target = semanticNorm(String(payload.target ?? (payload.details as Record<string, unknown>)?.raw ?? ""), 200);
+    return `tool_call:${event.actor.type}:${action}:${target}`;
+  }
+  if (kind === "artifact_created") {
+    const artifactType = String(payload.artifact_type ?? "");
+    const text = semanticNorm(String(payload.text ?? payload.summary ?? ""), 300);
+    const intentId = scope.intent_id ?? "";
+    return `artifact:${artifactType}:${intentId}:${text}`;
+  }
+  if (kind === "token_usage_checkpoint") {
+    const intentId = scope.intent_id ?? "";
+    return `token_usage:${ts}:${intentId}`;
+  }
+  // Other kinds: fall back to exact-like key but with ts bucket to allow minor ts drift
+  return JSON.stringify([
+    kind,
+    ts,
+    event.actor.type,
+    event.actor.id ?? "",
+    scope,
+    payload,
   ]);
 }
 
@@ -167,7 +229,8 @@ interface FingerprintMatch {
   confidence: number;
 }
 
-function findFingerprintSessionMatch(adapted: AdaptedSession, maxWindowHours = 72): FingerprintMatch | undefined {
+function findFingerprintSessionMatch(adapted: AdaptedSession): FingerprintMatch | undefined {
+  const maxWindowHours = getIngestFingerprintMaxWindowHours();
   const prompt = extractPromptFromAdapted(adapted);
   const normalized = normalizeFingerprint(prompt);
   if (!normalized) return undefined;
@@ -201,7 +264,7 @@ function findFingerprintSessionMatch(adapted: AdaptedSession, maxWindowHours = 7
   }
 
   if (!best) return undefined;
-  if (best.confidence < 0.62) return undefined;
+  if (best.confidence < getIngestFingerprintMinConfidence()) return undefined;
   return best;
 }
 
@@ -235,6 +298,31 @@ function writeEventsAppend(sessionId: string, events: CanonicalEvent[]): string 
   const existing = existsSync(path) ? readFileSync(path, "utf-8").trim() : "";
   const append = events.map((e) => JSON.stringify(e)).join("\n");
   const body = [existing, append].filter(Boolean).join("\n") + "\n";
+  writeFileSync(path, body, "utf-8");
+  return path;
+}
+
+/** Write full session log with events sorted by ts then seq and seq reassigned 1..N. */
+function writeSessionFull(sessionId: string, events: CanonicalEvent[]): string {
+  const outDir = getSessionsDir();
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const path = join(outDir, `${safeFilename(sessionId)}.jsonl`);
+  const sorted = [...events].sort((a, b) => {
+    const t = a.ts.localeCompare(b.ts);
+    if (t !== 0) return t;
+    return (a.seq ?? 0) - (b.seq ?? 0);
+  });
+  let seq = 0;
+  const normalized = sorted.map((e) => {
+    seq += 1;
+    return {
+      ...e,
+      session_id: sessionId,
+      seq,
+      id: `${sessionId}:${seq}:${randomUUID().slice(0, 8)}`,
+    };
+  });
+  const body = normalized.map((e) => JSON.stringify(e)).join("\n") + "\n";
   writeFileSync(path, body, "utf-8");
   return path;
 }
@@ -316,31 +404,49 @@ export function ingestRawContent(raw: string, options: IngestOptions = {}): Inge
   const sessionSelection = chooseSessionId(adapted, options.merge_session_id);
   const sessionId = sessionSelection.session_id;
   const existing = readSessionEvents(sessionId);
-  const existingKeys = new Set(existing.map((e) => dedupeKey(e)));
   const doDedupe = options.dedupe ?? true;
+  const fallbackTs = new Date().toISOString();
+
+  const isMerge = existing.length > 0;
+  const existingSemanticKeys = new Set(existing.map((e) => semanticDedupeKey(e)));
+  const existingExactKeys = new Set(existing.map((e) => dedupeKey(e)));
 
   let seq = existing.length > 0 ? Math.max(...existing.map((e) => e.seq)) : 0;
   let inserted = 0;
   let skipped = 0;
   const toInsert: CanonicalEvent[] = [];
-  const fallbackTs = new Date().toISOString();
 
   for (const event of adapted.events) {
     const candidate = buildCanonicalEvent(sessionId, seq + 1, event, fallbackTs);
-    const key = dedupeKey(candidate);
-    if (doDedupe && existingKeys.has(key)) {
-      skipped += 1;
-      continue;
+    if (doDedupe) {
+      if (isMerge && existingSemanticKeys.has(semanticDedupeKey(candidate))) {
+        skipped += 1;
+        continue;
+      }
+      if (!isMerge && existingExactKeys.has(dedupeKey(candidate))) {
+        skipped += 1;
+        continue;
+      }
     }
     seq += 1;
     candidate.seq = seq;
     candidate.id = `${sessionId}:${seq}:${randomUUID().slice(0, 8)}`;
     toInsert.push(candidate);
-    existingKeys.add(key);
+    if (isMerge) existingSemanticKeys.add(semanticDedupeKey(candidate));
+    else existingExactKeys.add(dedupeKey(candidate));
     inserted += 1;
   }
 
-  const sessionPath = writeEventsAppend(sessionId, toInsert);
+  let sessionPath: string;
+  if (isMerge && toInsert.length > 0) {
+    const combined = [...existing, ...toInsert];
+    sessionPath = writeSessionFull(sessionId, combined);
+  } else if (isMerge && toInsert.length === 0) {
+    sessionPath = join(getSessionsDir(), `${safeFilename(sessionId)}.jsonl`);
+  } else {
+    sessionPath = writeEventsAppend(sessionId, toInsert);
+  }
+
   const rawPath = writeRawSidecar(sessionId, adapted.source, raw);
 
   return {

@@ -22,7 +22,7 @@ export type EventKind =
   | "replay_bookmark"
   | "hotspot";
 
-export interface TokenUsagePayload {
+export interface TokenUsagePayload extends Record<string, unknown> {
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -37,7 +37,7 @@ export interface TokenUsagePayload {
   source?: string;
 }
 
-export interface ArtifactPayload {
+export interface ArtifactPayload extends Record<string, unknown> {
   artifact_type?: string;
   title?: string;
   text?: string;
@@ -50,11 +50,12 @@ export interface ToolCallPayload {
   category?: "file" | "tool" | "search" | "execution";
   action?: string;
   target?: string;
-  details?: Record<string, unknown>;
+  details?: unknown;
   [key: string]: unknown;
 }
 
-export type CanonicalPayload = Record<string, unknown> | TokenUsagePayload | ArtifactPayload | ToolCallPayload;
+export type CanonicalPayload = Record<string, unknown> &
+  Partial<TokenUsagePayload & ArtifactPayload & ToolCallPayload>;
 
 export interface CanonicalEvent {
   id: string;

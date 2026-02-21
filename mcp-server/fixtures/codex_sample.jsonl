@@ -1,0 +1,6 @@
+{"type":"session_meta","timestamp":"2025-02-21T12:00:00.000Z","payload":{"id":"codex_fixture_1","user_goal":"Run the test suite","user_prompt":"Run the test suite and fix any failures"}}
+{"type":"event_msg","timestamp":"2025-02-21T12:00:01.000Z","payload":{"type":"user_message","message":"Run the test suite"}}
+{"type":"event_msg","timestamp":"2025-02-21T12:00:02.000Z","payload":{"type":"agent_reasoning","text":"I will run the tests using the test runner."}}
+{"type":"response_item","timestamp":"2025-02-21T12:00:03.000Z","payload":{"type":"function_call","name":"run_tests","arguments":"{}"}}
+{"type":"response_item","timestamp":"2025-02-21T12:00:04.000Z","payload":{"type":"function_call_output","call_id":"call_1","output":"Tests passed."}}
+{"type":"event_msg","timestamp":"2025-02-21T12:00:05.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}}}

@@ -68,3 +68,21 @@ export function resolveWithinWorkspace(workspaceRoot: string, rawPath: string): 
   }
   return real;
 }
+
+/** Min confidence (0–1) for fingerprint session match. Default 0.62. */
+export function getIngestFingerprintMinConfidence(): number {
+  const raw = process.env.AL_INGEST_FINGERPRINT_MIN_CONFIDENCE ?? process.env.MCP_AL_INGEST_FINGERPRINT_MIN_CONFIDENCE;
+  if (raw === undefined) return 0.62;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 1) return 0.62;
+  return n;
+}
+
+/** Max time window (hours) for fingerprint match. Default 72. */
+export function getIngestFingerprintMaxWindowHours(): number {
+  const raw = process.env.AL_INGEST_FINGERPRINT_MAX_WINDOW_HOURS ?? process.env.MCP_AL_INGEST_FINGERPRINT_MAX_WINDOW_HOURS;
+  if (raw === undefined) return 72;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 72;
+  return n;
+}
