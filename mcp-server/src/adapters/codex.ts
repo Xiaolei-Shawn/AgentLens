@@ -25,6 +25,37 @@ function short(value: unknown, max = 800): string | undefined {
   return s.length > max ? `${s.slice(0, max)}...` : s;
 }
 
+function sanitizeText(value: unknown, max = 3000): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function normalizeTokenUsage(value: unknown): Record<string, unknown> | undefined {
+  const info = toObject(value);
+  const total = toObject(info.total_token_usage);
+  const last = toObject(info.last_token_usage);
+  const primary = Object.keys(last).length > 0 ? last : total;
+  if (Object.keys(primary).length === 0) return undefined;
+  const prompt = primary.input_tokens;
+  const completion = primary.output_tokens;
+  const totalTokens = primary.total_tokens;
+  return {
+    prompt_tokens: typeof prompt === "number" ? prompt : undefined,
+    completion_tokens: typeof completion === "number" ? completion : undefined,
+    total_tokens: typeof totalTokens === "number" ? totalTokens : undefined,
+    input_tokens: typeof primary.input_tokens === "number" ? primary.input_tokens : undefined,
+    cached_input_tokens:
+      typeof primary.cached_input_tokens === "number" ? primary.cached_input_tokens : undefined,
+    output_tokens: typeof primary.output_tokens === "number" ? primary.output_tokens : undefined,
+    reasoning_output_tokens:
+      typeof primary.reasoning_output_tokens === "number" ? primary.reasoning_output_tokens : undefined,
+    source_model_context_window:
+      typeof info.model_context_window === "number" ? info.model_context_window : undefined,
+  };
+}
+
 function parseLines(content: string): CodexLine[] {
   return content
     .split("\n")
@@ -42,7 +73,7 @@ function parseLines(content: string): CodexLine[] {
     });
 }
 
-function mapResponseItem(record: CodexLine, intentId: string, now: string): AdaptedEvent[] {
+function mapResponseItem(record: CodexLine, intentId: string | undefined, now: string): AdaptedEvent[] {
   const payload = toObject(record.payload);
   const itemType = short(payload.type) ?? "unknown";
   const ts = toIso(record.timestamp, now);
@@ -54,7 +85,7 @@ function mapResponseItem(record: CodexLine, intentId: string, now: string): Adap
         kind: "tool_call",
         ts,
         actor: { type: "agent", id: "codex" },
-        scope: { intent_id: intentId },
+        scope: intentId ? { intent_id: intentId } : undefined,
         payload: {
           category: itemType === "web_search_call" ? "search" : "tool",
           action,
@@ -78,7 +109,7 @@ function mapResponseItem(record: CodexLine, intentId: string, now: string): Adap
         kind: "tool_call",
         ts,
         actor: { type: "tool", id: "codex-tool" },
-        scope: { intent_id: intentId },
+        scope: intentId ? { intent_id: intentId } : undefined,
         payload: {
           category: "execution",
           action: itemType,
@@ -91,6 +122,64 @@ function mapResponseItem(record: CodexLine, intentId: string, now: string): Adap
         derived: true,
         confidence: 0.8,
         visibility: "raw",
+      },
+    ];
+  }
+
+  if (itemType === "reasoning") {
+    const summary = Array.isArray(payload.summary)
+      ? payload.summary
+          .map((entry) => {
+            const record = toObject(entry);
+            return sanitizeText(record.text, 500);
+          })
+          .filter((s): s is string => Boolean(s))
+          .join(" ")
+      : undefined;
+    const encrypted = sanitizeText(payload.encrypted_content, 400);
+    if (!summary && !encrypted) return [];
+    return [
+      {
+        kind: "artifact_created",
+        ts,
+        actor: { type: "agent", id: "codex" },
+        scope: intentId ? { intent_id: intentId, module: "reasoning" } : { module: "reasoning" },
+        payload: {
+          artifact_type: "reasoning",
+          summary,
+          encrypted_content_preview: encrypted,
+          source: "codex_response_item",
+        },
+        derived: true,
+        confidence: 0.9,
+        visibility: "debug",
+      },
+    ];
+  }
+
+  if (itemType === "message") {
+    const content = Array.isArray(payload.content) ? payload.content : [];
+    const texts = content
+      .map((entry) => sanitizeText(toObject(entry).text))
+      .filter((s): s is string => Boolean(s));
+    const merged = texts.join("\n").trim();
+    if (!merged) return [];
+    return [
+      {
+        kind: "artifact_created",
+        ts,
+        actor: { type: "agent", id: "codex" },
+        scope: intentId ? { intent_id: intentId, module: "assistant_output" } : { module: "assistant_output" },
+        payload: {
+          artifact_type: "assistant_message",
+          role: short(payload.role),
+          phase: short(payload.phase),
+          text: sanitizeText(merged, 3200),
+          source: "codex_response_item",
+        },
+        derived: true,
+        confidence: 0.85,
+        visibility: "review",
       },
     ];
   }
@@ -114,7 +203,8 @@ export const codexJsonlAdapter: RawAdapter = {
     const meta = toObject(sessionMeta.payload);
     const sessionId = short(meta.id) ?? `codex_${Date.now()}`;
     const start = toIso(meta.timestamp, toIso(sessionMeta.timestamp, now));
-    const intentId = `intent_${sessionId}_main`;
+    let intentCounter = 0;
+    let activeIntentId: string | undefined;
     const events: AdaptedEvent[] = [];
 
     events.push({
@@ -137,13 +227,15 @@ export const codexJsonlAdapter: RawAdapter = {
         if (p.type === "user_message") {
           const message = short(p.message, 3000);
           if (message) {
+            intentCounter += 1;
+            activeIntentId = `intent_${sessionId}_${intentCounter}`;
             events.push({
               kind: "intent",
               ts: toIso(record.timestamp, now),
               actor: { type: "user", id: "codex-user" },
-              scope: { intent_id: intentId },
+              scope: { intent_id: activeIntentId },
               payload: {
-                intent_id: intentId,
+                intent_id: activeIntentId,
                 title: message.split("\n")[0]?.slice(0, 120) || "User message",
                 description: message,
                 source: "codex_event_msg",
@@ -154,22 +246,64 @@ export const codexJsonlAdapter: RawAdapter = {
             });
           }
         } else if (p.type === "token_count") {
+          const usage = normalizeTokenUsage(p.info);
           events.push({
             kind: "token_usage_checkpoint",
             ts: toIso(record.timestamp, now),
             actor: { type: "system", id: "codex" },
-            scope: { intent_id: intentId, module: "llm" },
+            scope: activeIntentId ? { intent_id: activeIntentId, module: "llm" } : { module: "llm" },
             payload: {
               source: "codex_event_msg",
-              usage: p.info,
+              usage,
+              raw: p.info,
             },
             visibility: "raw",
             derived: true,
             confidence: 0.75,
           });
+        } else if (p.type === "agent_reasoning") {
+          const reasoning = sanitizeText(p.text, 3500);
+          if (reasoning) {
+            events.push({
+              kind: "artifact_created",
+              ts: toIso(record.timestamp, now),
+              actor: { type: "agent", id: "codex" },
+              scope: activeIntentId
+                ? { intent_id: activeIntentId, module: "reasoning" }
+                : { module: "reasoning" },
+              payload: {
+                artifact_type: "reasoning",
+                text: reasoning,
+                source: "codex_event_msg",
+              },
+              visibility: "debug",
+              derived: true,
+              confidence: 0.9,
+            });
+          }
+        } else if (p.type === "agent_message") {
+          const assistantMessage = sanitizeText(p.message, 3500);
+          if (assistantMessage) {
+            events.push({
+              kind: "artifact_created",
+              ts: toIso(record.timestamp, now),
+              actor: { type: "agent", id: "codex" },
+              scope: activeIntentId
+                ? { intent_id: activeIntentId, module: "assistant_output" }
+                : { module: "assistant_output" },
+              payload: {
+                artifact_type: "assistant_message",
+                text: assistantMessage,
+                source: "codex_event_msg",
+              },
+              visibility: "review",
+              derived: true,
+              confidence: 0.85,
+            });
+          }
         }
       } else if (record.type === "response_item") {
-        events.push(...mapResponseItem(record, intentId, now));
+        events.push(...mapResponseItem(record, activeIntentId, now));
       }
     }
 

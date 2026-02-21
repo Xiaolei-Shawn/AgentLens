@@ -356,7 +356,7 @@ async function main(): Promise<void> {
       "  agentlens start [--open]\n" +
       "  agentlens mcp\n" +
       "  agentlens export [--latest|--session <id>] [--out <path>]\n" +
-      "  agentlens ingest --input <raw.jsonl> [--adapter auto|codex_jsonl] [--merge-session <id>] [--no-dedupe]\n"
+      "  agentlens ingest --input <raw.jsonl> [--adapter auto|codex_jsonl|cursor_raw] [--merge-session <id>] [--no-dedupe]\n"
   );
   process.exitCode = 1;
 }
