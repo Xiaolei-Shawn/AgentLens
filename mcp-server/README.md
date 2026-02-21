@@ -162,6 +162,12 @@ Example: ingest Codex raw JSONL and convert to canonical events:
 agentlens ingest --input /path/to/rollout.jsonl --adapter codex_jsonl
 ```
 
+Example: ingest Cursor raw logs that contain `<user_query>`, `<think>`, and `Tool call/Tool result` blocks:
+
+```bash
+agentlens ingest --input /path/to/cursor-log.txt --adapter cursor_raw
+```
+
 Auto-detect adapter and merge into an existing session with dedupe:
 
 ```bash
@@ -173,6 +179,13 @@ Notes:
 - Ingest writes canonical events to `<session_id>.jsonl`.
 - Original raw content is preserved in `<session_id>.<adapter>.raw.jsonl`.
 - Duplicate events are skipped by default (same kind/timestamp/actor/scope/payload signature).
+- Codex adapter preserves user prompts, reasoning summaries, assistant outputs, tool calls/results, and normalized token checkpoints.
+- Cursor adapter preserves user queries, `<think>` reasoning traces, tool call/result traces, and token counters when present.
+- If `--merge-session` is omitted, ingest attempts `merge-session-by-fingerprint` automatically:
+  - Primary signal: normalized user prompt / intent similarity
+  - Secondary signal: timestamp proximity (recent sessions weighted higher)
+  - Safety threshold is applied; if confidence is low, a new session is created instead.
+- Ingest output includes `merge_strategy` (`explicit_merge`, `adapted_session_id`, `fingerprint_match`, `new_session`) and optional `merge_confidence`.
 
 ## Publish checklist
 

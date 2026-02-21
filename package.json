@@ -9,6 +9,10 @@
     "lint": "pnpm -r --if-present lint",
     "dev:webapp": "pnpm --filter webapp dev",
     "start:mcp": "pnpm --filter @xiaolei.shawn/mcp-server mcp",
-    "start:gateway": "pnpm --filter @xiaolei.shawn/mcp-server start"
+    "start:gateway": "pnpm --filter @xiaolei.shawn/mcp-server start",
+    "ingest": "pnpm --filter @xiaolei.shawn/mcp-server ingest",
+    "ingest:auto": "pnpm --filter @xiaolei.shawn/mcp-server ingest:auto",
+    "ingest:codex": "pnpm --filter @xiaolei.shawn/mcp-server ingest:codex",
+    "ingest:cursor": "pnpm --filter @xiaolei.shawn/mcp-server ingest:cursor"
   }
 }
