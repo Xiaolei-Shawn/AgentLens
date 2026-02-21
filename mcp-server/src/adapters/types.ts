@@ -1,4 +1,4 @@
-import type { ActorType, EventKind, EventVisibility } from "../event-envelope.js";
+import type { ActorType, CanonicalPayload, EventKind, EventVisibility } from "../event-envelope.js";
 
 export interface AdaptedEvent {
   kind: EventKind;
@@ -12,7 +12,7 @@ export interface AdaptedEvent {
     file?: string;
     module?: string;
   };
-  payload: Record<string, unknown>;
+  payload: CanonicalPayload;
   derived?: boolean;
   confidence?: number;
   visibility?: EventVisibility;

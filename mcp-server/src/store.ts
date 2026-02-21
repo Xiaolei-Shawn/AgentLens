@@ -214,17 +214,18 @@ function deriveSnapshot(session: SessionState, events: CanonicalEvent[]): Normal
   let intentCount = 0;
 
   for (const event of events) {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
     kinds[event.kind] = (kinds[event.kind] ?? 0) + 1;
     if (event.kind === "intent") intentCount += 1;
     if (event.kind === "file_op") {
       const target =
-        typeof event.payload.target === "string"
-          ? event.payload.target
+        typeof payload.target === "string"
+          ? payload.target
           : event.scope?.file;
       if (target && target.trim() !== "") files.add(target);
     }
     if (event.kind === "verification") {
-      const result = event.payload.result;
+      const result = payload.result;
       if (result === "pass") pass += 1;
       else if (result === "fail") fail += 1;
       else unknown += 1;
@@ -232,7 +233,8 @@ function deriveSnapshot(session: SessionState, events: CanonicalEvent[]): Normal
   }
 
   const end = [...events].reverse().find((event) => event.kind === "session_end");
-  const outcomeRaw = end?.payload?.outcome;
+  const endPayload = (end?.payload ?? {}) as Record<string, unknown>;
+  const outcomeRaw = endPayload.outcome;
   const outcome =
     outcomeRaw === "completed" || outcomeRaw === "partial" || outcomeRaw === "failed" || outcomeRaw === "aborted"
       ? outcomeRaw

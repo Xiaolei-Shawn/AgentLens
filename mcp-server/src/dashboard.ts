@@ -168,7 +168,8 @@ function readSessionFile(absolutePath: string): SessionPayload {
 
 function deriveOutcome(events: CanonicalEvent[]): SessionFileSummary["outcome"] {
   const end = [...events].reverse().find((event) => event.kind === "session_end");
-  const outcome = end?.payload?.outcome;
+  const payload = (end?.payload ?? {}) as Record<string, unknown>;
+  const outcome = payload.outcome;
   return outcome === "completed" || outcome === "partial" || outcome === "failed" || outcome === "aborted"
     ? outcome
     : "unknown";

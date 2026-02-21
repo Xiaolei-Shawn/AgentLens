@@ -22,6 +22,40 @@ export type EventKind =
   | "replay_bookmark"
   | "hotspot";
 
+export interface TokenUsagePayload {
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    input_tokens?: number;
+    cached_input_tokens?: number;
+    output_tokens?: number;
+    reasoning_output_tokens?: number;
+    source_model_context_window?: number;
+  };
+  raw?: unknown;
+  source?: string;
+}
+
+export interface ArtifactPayload {
+  artifact_type?: string;
+  title?: string;
+  text?: string;
+  summary?: string;
+  source?: string;
+  [key: string]: unknown;
+}
+
+export interface ToolCallPayload {
+  category?: "file" | "tool" | "search" | "execution";
+  action?: string;
+  target?: string;
+  details?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export type CanonicalPayload = Record<string, unknown> | TokenUsagePayload | ArtifactPayload | ToolCallPayload;
+
 export interface CanonicalEvent {
   id: string;
   session_id: string;
@@ -37,7 +71,7 @@ export interface CanonicalEvent {
     file?: string;
     module?: string;
   };
-  payload: Record<string, unknown>;
+  payload: CanonicalPayload;
   derived?: boolean;
   confidence?: number;
   visibility?: EventVisibility;
