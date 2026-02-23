@@ -19,11 +19,13 @@ import "./FlowView.css";
 
 const DEFAULT_VIEW_WIDTH = 1000;
 const DEFAULT_VIEW_HEIGHT = 520;
-/** Fixed content size for grid so layout is stable when panning/zooming */
+/** Base content width; height scales with event count so huge sessions stay readable */
 const CONTENT_WIDTH = 1200;
-const CONTENT_HEIGHT = 800;
+const CONTENT_HEIGHT_BASE = 800;
+const MIN_ROW_HEIGHT = 48;
+const MAX_CONTENT_HEIGHT = 80_000;
 const ZOOM_MIN = 0.15;
-const ZOOM_MAX = 4;
+const ZOOM_MAX = 24;
 const ZOOM_SENSITIVITY = 0.0012;
 const ZOOM_STEP = 1.35;
 const FOCUS_ANIMATION_MS = 360;
@@ -38,7 +40,7 @@ function animatePanZoom(
   to: { pan: { x: number; y: number }; zoom: number },
   durationMs: number,
   onUpdate: (pan: { x: number; y: number }, zoom: number) => void,
-  onComplete: () => void
+  onComplete: () => void,
 ) {
   const start = performance.now();
   let rafId: number;
@@ -92,14 +94,36 @@ type GridLayout = {
   pathD: string;
 };
 
+/**
+ * Compute content dimensions so that each event slot is at least MIN_SLOT_WIDTH x MIN_ROW_HEIGHT.
+ * For huge sessions the canvas grows vertically (and optionally horizontally) so the grid stays readable.
+ */
+function getContentDimensions(n: number): {
+  contentWidth: number;
+  contentHeight: number;
+} {
+  if (n === 0)
+    return { contentWidth: CONTENT_WIDTH, contentHeight: CONTENT_HEIGHT_BASE };
+  const contentW = CONTENT_WIDTH - 2 * PAD;
+  const eventsPerRow = Math.max(1, Math.floor(contentW / MIN_SLOT_WIDTH));
+  const numRows = Math.ceil(n / eventsPerRow);
+  const minContentH = numRows * MIN_ROW_HEIGHT;
+  const contentHeight = Math.min(
+    MAX_CONTENT_HEIGHT,
+    Math.max(CONTENT_HEIGHT_BASE - 2 * PAD, minContentH),
+  );
+  const contentWidth = CONTENT_WIDTH;
+  return { contentWidth, contentHeight: contentHeight + 2 * PAD };
+}
+
 function computeGridLayout(
   n: number,
-  viewWidth: number,
-  viewHeight: number,
+  contentWidth: number,
+  contentHeight: number,
 ): GridLayout | null {
   if (n === 0) return null;
-  const contentW = viewWidth - 2 * PAD;
-  const contentH = viewHeight - 2 * PAD;
+  const contentW = contentWidth - 2 * PAD;
+  const contentH = contentHeight - 2 * PAD;
   if (contentW <= 0 || contentH <= 0) return null;
 
   const eventsPerRow = Math.max(1, Math.floor(contentW / MIN_SLOT_WIDTH));
@@ -125,8 +149,8 @@ function computeGridLayout(
   const pathD = pathSegments.join(" ");
 
   return {
-    width: viewWidth,
-    height: viewHeight,
+    width: contentWidth,
+    height: contentHeight,
     eventsPerRow,
     numRows,
     slotWidth,
@@ -156,7 +180,8 @@ function getRectBoundaryPoint(
 }
 
 function isCriticalEvent(event: SessionEvent): boolean {
-  if (event.kind === "verification" && event.payload.result === "fail") return true;
+  if (event.kind === "verification" && event.payload.result === "fail")
+    return true;
   if (event.kind === "assumption" && event.payload.risk === "high") return true;
   if (event.kind === "file_op") {
     const target =
@@ -177,7 +202,8 @@ function isCriticalEvent(event: SessionEvent): boolean {
 
 function isWarningEvent(event: SessionEvent): boolean {
   if (isCriticalEvent(event)) return false;
-  if (event.kind === "verification" && event.payload.result === "unknown") return true;
+  if (event.kind === "verification" && event.payload.result === "unknown")
+    return true;
   if (event.kind === "decision") return true;
   return false;
 }
@@ -189,7 +215,10 @@ function formatClock(ts?: string): string {
   return d.toLocaleTimeString(undefined, { hour12: false });
 }
 
-function interpolatePathPoint(points: [number, number][], t: number): [number, number] {
+function interpolatePathPoint(
+  points: [number, number][],
+  t: number,
+): [number, number] {
   if (points.length === 0) return [0, 0];
   if (points.length === 1) return points[0];
   const i1 = Math.max(0, Math.min(points.length - 1, Math.floor(t)));
@@ -205,13 +234,13 @@ function interpolatePathPoint(points: [number, number][], t: number): [number, n
   const ttt = tt * localT;
   const x =
     0.5 *
-    ((2 * p1[0]) +
+    (2 * p1[0] +
       (-p0[0] + p2[0]) * localT +
       (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * tt +
       (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * ttt);
   const y =
     0.5 *
-    ((2 * p1[1]) +
+    (2 * p1[1] +
       (-p0[1] + p2[1]) * localT +
       (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * tt +
       (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * ttt);
@@ -288,9 +317,18 @@ export function FlowView({
     return () => ro.disconnect();
   }, []);
 
-  const layout = useMemo(
-    () => computeGridLayout(events.length, CONTENT_WIDTH, CONTENT_HEIGHT),
+  const contentDims = useMemo(
+    () => getContentDimensions(events.length),
     [events.length],
+  );
+  const layout = useMemo(
+    () =>
+      computeGridLayout(
+        events.length,
+        contentDims.contentWidth,
+        contentDims.contentHeight,
+      ),
+    [events.length, contentDims.contentWidth, contentDims.contentHeight],
   );
   const [rideCamera, setRideCamera] = useState(true);
   const [shipPerspective, setShipPerspective] = useState(false);
@@ -305,7 +343,9 @@ export function FlowView({
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [selectedTransactionIndex, setSelectedTransactionIndex] = useState<number | null>(null);
+  const [selectedTransactionIndex, setSelectedTransactionIndex] = useState<
+    number | null
+  >(null);
   const isPanningRef = useRef(false);
   const startPanRef = useRef({ x: 0, y: 0 });
   const startClientRef = useRef({ x: 0, y: 0 });
@@ -416,20 +456,21 @@ export function FlowView({
   const travelPosRafRef = useRef<number | null>(null);
 
   const keyMomentIndices = useMemo(
-    () => events
-      .map((e, i) => (isKeyMoment(e, i, lastIndex) ? i : -1))
-      .filter((i) => i >= 0),
-    [events, lastIndex]
+    () =>
+      events
+        .map((e, i) => (isKeyMoment(e, i, lastIndex) ? i : -1))
+        .filter((i) => i >= 0),
+    [events, lastIndex],
   );
   const criticalIndices = useMemo(
-    () => events
-      .map((e, i) => (isCriticalEvent(e) ? i : -1))
-      .filter((i) => i >= 0),
-    [events]
+    () =>
+      events.map((e, i) => (isCriticalEvent(e) ? i : -1)).filter((i) => i >= 0),
+    [events],
   );
   const nextKeyMoment = keyMomentIndices.find((i) => i > currentIndex) ?? null;
   const nextCritical = criticalIndices.find((i) => i > currentIndex) ?? null;
-  const criticalRatio = events.length === 0 ? 0 : criticalIndices.length / events.length;
+  const criticalRatio =
+    events.length === 0 ? 0 : criticalIndices.length / events.length;
   const missionFeed = useMemo(() => {
     const start = Math.max(0, currentIndex - 3);
     return events.slice(start, currentIndex + 1).map((event, offset) => {
@@ -464,7 +505,13 @@ export function FlowView({
   }, [intentOrder]);
 
   useEffect(() => {
-    if (focusNodeIndex == null || !layout || focusNodeIndex < 0 || focusNodeIndex >= layout.positions.length) return;
+    if (
+      focusNodeIndex == null ||
+      !layout ||
+      focusNodeIndex < 0 ||
+      focusNodeIndex >= layout.positions.length
+    )
+      return;
     focusAnimationRef.current?.();
     const [cx, cy] = layout.positions[focusNodeIndex];
     const targetZoom = 1.8;
@@ -483,7 +530,7 @@ export function FlowView({
       () => {
         focusAnimationRef.current = null;
         onFocusComplete?.();
-      }
+      },
     );
     return () => {
       focusAnimationRef.current?.();
@@ -498,7 +545,8 @@ export function FlowView({
       setTravelPosition(currentIndex);
       return;
     }
-    if (travelPosRafRef.current != null) cancelAnimationFrame(travelPosRafRef.current);
+    if (travelPosRafRef.current != null)
+      cancelAnimationFrame(travelPosRafRef.current);
     const from = travelPosition;
     const to = currentIndex;
     if (Math.abs(to - from) < 0.001) return;
@@ -567,7 +615,8 @@ export function FlowView({
     if (!(rideCamera && isPlaying)) return;
     if (prevIndexRef.current === currentIndex) return;
     prevIndexRef.current = currentIndex;
-    if (travelFxRafRef.current != null) cancelAnimationFrame(travelFxRafRef.current);
+    if (travelFxRafRef.current != null)
+      cancelAnimationFrame(travelFxRafRef.current);
     const started = performance.now();
     const DURATION = 520;
     const tick = () => {
@@ -595,7 +644,9 @@ export function FlowView({
   const currentEvent = events[currentIndex];
   const summary = currentEvent ? getEventSummary(currentEvent) : "";
   const currentTimestamp = currentEvent?.ts || "—";
-  const currentNodeId = currentEvent ? `EVT_${currentIndex}_${currentEvent.kind.toUpperCase()}` : "—";
+  const currentNodeId = currentEvent
+    ? `EVT_${currentIndex}_${currentEvent.kind.toUpperCase()}`
+    : "—";
   const logsTail = useMemo(() => {
     const start = Math.max(0, currentIndex - 1);
     return events.slice(start, currentIndex + 2).map((event, offset) => {
@@ -607,10 +658,16 @@ export function FlowView({
       };
     });
   }, [currentIndex, events]);
-  const upcomingCritical = criticalIndices.filter((i) => i >= currentIndex).slice(0, 4);
+  const upcomingCritical = criticalIndices
+    .filter((i) => i >= currentIndex)
+    .slice(0, 4);
   const cinematicZoom = shipPerspective ? 1 : zoom * (1 + travelFx * 0.14);
-  const cinematicPanX = shipPerspective ? 0 : (-pan.x * zoom - (travelFx * 16));
-  const cinematicPanY = shipPerspective ? 0 : (-pan.y * zoom);
+  const cinematicPanX = shipPerspective ? 0 : -pan.x * zoom - travelFx * 16;
+  const cinematicPanY = shipPerspective ? 0 : -pan.y * zoom;
+  const worldTransform =
+    shipPerspective
+      ? undefined
+      : `scale(${cinematicZoom}) translate(${-pan.x}, ${-pan.y})`;
   const showTravelDenseLabels = !(rideCamera && isPlaying);
   const avgTransitionMs = useMemo(() => {
     if (events.length < 2) return 0;
@@ -644,7 +701,9 @@ export function FlowView({
   const activeDurationMs = useMemo(() => {
     if (events.length < 2) return 0;
     const first = events[0]?.ts ? new Date(events[0].ts).getTime() : NaN;
-    const last = events[events.length - 1]?.ts ? new Date(events[events.length - 1].ts).getTime() : NaN;
+    const last = events[events.length - 1]?.ts
+      ? new Date(events[events.length - 1].ts).getTime()
+      : NaN;
     if (!Number.isFinite(first) || !Number.isFinite(last)) return 0;
     return Math.max(0, Math.round(last - first));
   }, [events]);
@@ -653,7 +712,10 @@ export function FlowView({
     const pass = all.filter((e) => e.payload.result === "pass").length;
     const fail = all.filter((e) => e.payload.result === "fail").length;
     const unknown = all.filter((e) => e.payload.result === "unknown").length;
-    const health = all.length === 0 ? 0 : Math.max(0, Math.min(100, Math.round((pass / all.length) * 100)));
+    const health =
+      all.length === 0
+        ? 0
+        : Math.max(0, Math.min(100, Math.round((pass / all.length) * 100)));
     const intents = events.filter((e) => e.kind === "intent");
     const intentIds = intents
       .map((e) => {
@@ -666,11 +728,20 @@ export function FlowView({
       const id = event.scope?.intent_id;
       if (typeof id === "string" && id) verifiedIntentIds.add(id);
     }
-    const coveragePct = intentIds.length === 0
-      ? null
-      : Math.round((verifiedIntentIds.size / intentIds.length) * 100);
+    const coveragePct =
+      intentIds.length === 0
+        ? null
+        : Math.round((verifiedIntentIds.size / intentIds.length) * 100);
     const lastVerification = all.length > 0 ? all[all.length - 1] : null;
-    return { all: all.length, pass, fail, unknown, health, coveragePct, lastVerification };
+    return {
+      all: all.length,
+      pass,
+      fail,
+      unknown,
+      health,
+      coveragePct,
+      lastVerification,
+    };
   }, [events]);
   const paceBars = useMemo(() => {
     if (events.length < 2) return [20, 24, 28, 32, 36];
@@ -752,17 +823,18 @@ export function FlowView({
         ? Math.exp(-depth * 0.35)
         : Math.exp(-depth * 0.16);
       const axisDistanceRaw = forward
-        ? (Math.pow(depth, 0.72) * (pathBounds.height * 0.74))
-        : (Math.pow(depth, 0.86) * (pathBounds.height * 0.34));
+        ? Math.pow(depth, 0.72) * (pathBounds.height * 0.74)
+        : Math.pow(depth, 0.86) * (pathBounds.height * 0.34);
       const minSeparation = forward ? 84 : 62;
       const separationFactor = 1 - Math.exp(-depth * 9);
-      const axisDistance = axisDistanceRaw + (minSeparation * separationFactor);
+      const axisDistance = axisDistanceRaw + minSeparation * separationFactor;
       const dirX = forward ? futureDirX : pastDirX;
       const dirY = forward ? futureDirY : pastDirY;
       const perpX = -dirY;
       const perpY = dirX;
       const laneFactor = centerX === 0 ? 0 : (x - centerX) / centerX;
-      const swirl = Math.sin(delta * 0.92) * (forward ? 64 : 42) * Math.max(0.24, falloff);
+      const swirl =
+        Math.sin(delta * 0.92) * (forward ? 64 : 42) * Math.max(0.24, falloff);
       const laneOffset = laneFactor * (forward ? 36 : 58);
       const lateral = swirl + laneOffset;
       const baseX = centerX + dirX * axisDistance;
@@ -784,9 +856,23 @@ export function FlowView({
       const isCurrent = i === currentIndex;
       const finalScale = isCurrent ? Math.max(0.96, scale) : scale;
       const finalOpacity = isCurrent ? 1 : opacity;
-      return { x: projX, y: projY, scale: finalScale, opacity: finalOpacity, depth, isForward: forward };
+      return {
+        x: projX,
+        y: projY,
+        scale: finalScale,
+        opacity: finalOpacity,
+        depth,
+        isForward: forward,
+      };
     });
-  }, [currentIndex, positions, pathBounds.height, pathBounds.width, shipPerspective, travelPosition]);
+  }, [
+    currentIndex,
+    positions,
+    pathBounds.height,
+    pathBounds.width,
+    shipPerspective,
+    travelPosition,
+  ]);
 
   const CONNECTOR_INSET = 2;
 
@@ -803,7 +889,10 @@ export function FlowView({
       const hh1 = halfH * p1.scale;
       const exit = getRectBoundaryPoint(p0.x, p0.y, hw0, hh0, dx, dy);
       const entry = getRectBoundaryPoint(p1.x, p1.y, hw1, hh1, -dx, -dy);
-      out.push({ exit: exit as [number, number], entry: entry as [number, number] });
+      out.push({
+        exit: exit as [number, number],
+        entry: entry as [number, number],
+      });
     }
     return out;
   }, [projected, halfW, halfH]);
@@ -833,9 +922,15 @@ export function FlowView({
       ? 0
       : Math.max(
           0,
-          Math.min(currentIndex - Math.floor(navWindowSize / 2), events.length - navWindowSize),
+          Math.min(
+            currentIndex - Math.floor(navWindowSize / 2),
+            events.length - navWindowSize,
+          ),
         );
-  const navDisplayIndices = Array.from({ length: navWindowSize }, (_, i) => navWindowStart + i);
+  const navDisplayIndices = Array.from(
+    { length: navWindowSize },
+    (_, i) => navWindowStart + i,
+  );
 
   const handleOpenInNodeView = useCallback(() => {
     const idx = Math.max(0, Math.min(currentIndex, positions.length - 1));
@@ -857,7 +952,7 @@ export function FlowView({
       () => {
         focusAnimationRef.current = null;
         onOpenInNodeView?.();
-      }
+      },
     );
   }, [
     currentIndex,
@@ -876,7 +971,7 @@ export function FlowView({
           <div
             className={`flow-view__space-layer ${rideCamera && isPlaying ? "is-traveling" : ""}`}
             style={{
-              transform: `translate(${(-pan.x * 0.14) - (travelFx * 30)}px, ${-pan.y * 0.06}px) scale(${1 + travelFx * 0.06})`,
+              transform: `translate(${-pan.x * 0.14 - travelFx * 30}px, ${-pan.y * 0.06}px) scale(${1 + travelFx * 0.06})`,
             }}
             aria-hidden
           />
@@ -899,9 +994,15 @@ export function FlowView({
                   >
                     <div className="flow-view__mission-dot" />
                     <div>
-                      <div className="flow-view__mission-time">TIMESTAMP {entry.time}</div>
-                      <div className="flow-view__mission-head">{entry.title}</div>
-                      <div className="flow-view__mission-detail">{entry.detail}</div>
+                      <div className="flow-view__mission-time">
+                        TIMESTAMP {entry.time}
+                      </div>
+                      <div className="flow-view__mission-head">
+                        {entry.title}
+                      </div>
+                      <div className="flow-view__mission-detail">
+                        {entry.detail}
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -941,7 +1042,11 @@ export function FlowView({
                   return next;
                 })
               }
-              aria-label={rideCamera ? "Disable ride camera mode" : "Enable ride camera mode"}
+              aria-label={
+                rideCamera
+                  ? "Disable ride camera mode"
+                  : "Enable ride camera mode"
+              }
               title={rideCamera ? "Ride camera: on" : "Ride camera: off"}
             >
               Ride
@@ -957,8 +1062,16 @@ export function FlowView({
                     return next;
                   })
                 }
-                aria-label={shipPerspective ? "Disable ship perspective" : "Enable ship perspective"}
-                title={shipPerspective ? "Ship perspective: on" : "Ship perspective: off"}
+                aria-label={
+                  shipPerspective
+                    ? "Disable ship perspective"
+                    : "Enable ship perspective"
+                }
+                title={
+                  shipPerspective
+                    ? "Ship perspective: on"
+                    : "Ship perspective: off"
+                }
               >
                 Perspective
               </button>
@@ -997,7 +1110,9 @@ export function FlowView({
                     className="flow-view__progress-fill"
                     style={{
                       width: `${
-                        events.length <= 1 ? 100 : (100 * (currentIndex + 1)) / events.length
+                        events.length <= 1
+                          ? 100
+                          : (100 * (currentIndex + 1)) / events.length
                       }%`,
                     }}
                   />
@@ -1040,8 +1155,18 @@ export function FlowView({
               preserveAspectRatio="none"
             >
               <defs>
-                <pattern id="flow-grid" width="28" height="28" patternUnits="userSpaceOnUse">
-                  <path d="M 28 0 L 0 0 0 28" fill="none" stroke="rgba(56,189,248,0.14)" strokeWidth="0.7" />
+                <pattern
+                  id="flow-grid"
+                  width="28"
+                  height="28"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d="M 28 0 L 0 0 0 28"
+                    fill="none"
+                    stroke="rgba(56,189,248,0.14)"
+                    strokeWidth="0.7"
+                  />
                 </pattern>
                 <linearGradient
                   id="flow-path-gradient"
@@ -1067,7 +1192,10 @@ export function FlowView({
               </defs>
               <g
                 className="flow-view__content"
-                transform={`translate(${cinematicPanX}, ${cinematicPanY}) scale(${cinematicZoom})`}
+                transform={
+                  worldTransform ??
+                  `translate(${cinematicPanX}, ${cinematicPanY}) scale(${cinematicZoom})`
+                }
               >
                 <rect
                   x={0}
@@ -1102,85 +1230,95 @@ export function FlowView({
                     opacity={0.95}
                   />
                 )}
-                {!shipPerspective && connectorSegments.map((seg, i) => {
-                  const [x0, y0] = seg.exit;
-                  const [x1, y1] = seg.entry;
-                  const dx = x1 - x0;
-                  const dy = y1 - y0;
-                  const len = Math.hypot(dx, dy) || 1;
-                  const ux = dx / len;
-                  const uy = dy / len;
-                  const inset = Math.min(CONNECTOR_INSET, len / 4);
-                  const startX = x0 + inset * ux;
-                  const startY = y0 + inset * uy;
-                  const endX = x1 - inset * ux;
-                  const endY = y1 - inset * uy;
-                  const pathD = `M ${startX} ${startY} L ${endX} ${endY}`;
-                  const mx = (x0 + x1) / 2;
-                  const my = (y0 + y1) / 2;
-                  const dur = getDurationMs(events, i, i + 1);
-                  const durLabel = formatDurationMs(dur);
-                  const isActive = i === currentIndex - 1;
-                  const showDurLabel = showTravelDenseLabels || i === currentIndex - 1;
-                  const isSelected = i === selectedTransactionIndex;
-                  return (
-                    <g
-                      key={i}
-                      className={`flow-view__connector-hit ${isSelected ? "flow-view__connector-hit--selected" : ""}`}
-                      style={{ cursor: "pointer" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedTransactionIndex((prev) => (prev === i ? null : i));
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Transition from event ${i + 1} to ${i + 2}, ${durLabel}`}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setSelectedTransactionIndex((prev) => (prev === i ? null : i));
-                        }
-                      }}
-                    >
-                      <path
-                        d={pathD}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth={20}
-                        strokeLinecap="round"
-                      />
-                      <path
-                        className="flow-view__connector-line"
-                        d={pathD}
-                        fill="none"
-                        stroke={
-                          isCriticalEvent(events[i + 1])
-                            ? "#f87171"
-                            : isWarningEvent(events[i + 1])
-                              ? "#f59e0b"
-                              : intentColorMap.get(getIntentId(events[i + 1])) ?? "#38bdf8"
-                        }
-                        strokeWidth={showTravelDenseLabels ? "2" : "1.4"}
-                        opacity={1}
-                        strokeLinecap="round"
-                        markerEnd="url(#flow-arrow)"
-                      />
-                      {showDurLabel && !shipPerspective && (
-                        <text
-                          x={mx}
-                          y={my - 8}
-                          textAnchor="middle"
-                          fill={isActive ? "#0da6f2" : "rgba(255,255,255,0.45)"}
-                          fontSize={showTravelDenseLabels ? 10 : 8}
-                          fontWeight="700"
-                          pointerEvents="none"
-                        >
-                          {durLabel}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
+                {!shipPerspective &&
+                  connectorSegments.map((seg, i) => {
+                    const [x0, y0] = seg.exit;
+                    const [x1, y1] = seg.entry;
+                    const dx = x1 - x0;
+                    const dy = y1 - y0;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const ux = dx / len;
+                    const uy = dy / len;
+                    const inset = Math.min(CONNECTOR_INSET, len / 4);
+                    const startX = x0 + inset * ux;
+                    const startY = y0 + inset * uy;
+                    const endX = x1 - inset * ux;
+                    const endY = y1 - inset * uy;
+                    const pathD = `M ${startX} ${startY} L ${endX} ${endY}`;
+                    const mx = (x0 + x1) / 2;
+                    const my = (y0 + y1) / 2;
+                    const dur = getDurationMs(events, i, i + 1);
+                    const durLabel = formatDurationMs(dur);
+                    const isActive = i === currentIndex - 1;
+                    const showDurLabel =
+                      showTravelDenseLabels || i === currentIndex - 1;
+                    const isSelected = i === selectedTransactionIndex;
+                    return (
+                      <g
+                        key={i}
+                        className={`flow-view__connector-hit ${isSelected ? "flow-view__connector-hit--selected" : ""}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTransactionIndex((prev) =>
+                            prev === i ? null : i,
+                          );
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Transition from event ${i + 1} to ${i + 2}, ${durLabel}`}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedTransactionIndex((prev) =>
+                              prev === i ? null : i,
+                            );
+                          }
+                        }}
+                      >
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={20}
+                          strokeLinecap="round"
+                        />
+                        <path
+                          className="flow-view__connector-line"
+                          d={pathD}
+                          fill="none"
+                          stroke={
+                            isCriticalEvent(events[i + 1])
+                              ? "#f87171"
+                              : isWarningEvent(events[i + 1])
+                                ? "#f59e0b"
+                                : (intentColorMap.get(
+                                    getIntentId(events[i + 1]),
+                                  ) ?? "#38bdf8")
+                          }
+                          strokeWidth={showTravelDenseLabels ? "2" : "1.4"}
+                          opacity={1}
+                          strokeLinecap="round"
+                          markerEnd="url(#flow-arrow)"
+                        />
+                        {showDurLabel && !shipPerspective && (
+                          <text
+                            x={mx}
+                            y={my - 8}
+                            textAnchor="middle"
+                            fill={
+                              isActive ? "#0da6f2" : "rgba(255,255,255,0.45)"
+                            }
+                            fontSize={showTravelDenseLabels ? 10 : 8}
+                            fontWeight="700"
+                            pointerEvents="none"
+                          >
+                            {durLabel}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
                 {/* Nodes */}
                 {renderOrder.map((i) => {
                   const event = events[i];
@@ -1197,14 +1335,21 @@ export function FlowView({
                   const keyMoment = isKeyMoment(event, i, lastIndex);
                   const critical = isCriticalEvent(event);
                   const warning = isWarningEvent(event);
-                  const intentColor = intentColorMap.get(getIntentId(event)) ?? "#38bdf8";
+                  const intentColor =
+                    intentColorMap.get(getIntentId(event)) ?? "#38bdf8";
                   const station = `Station ${String(i + 1).padStart(2, "0")}`;
                   const levelTitle = event.kind
                     .split("_")
-                    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                    .map(
+                      (w: string) =>
+                        w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+                    )
                     .join(" ");
                   const cardW = Math.max(112, 290 * p.scale);
-                  const cardH = Math.max(44, (shipPerspective && isCurrent ? 132 : 92) * p.scale);
+                  const cardH = Math.max(
+                    44,
+                    (shipPerspective && isCurrent ? 132 : 92) * p.scale,
+                  );
                   const subtitleSize = Math.max(7, 11 * p.scale);
                   const titleSize = Math.max(10, 24 * p.scale);
                   const navLabelSize = Math.max(7, 10 * p.scale);
@@ -1212,9 +1357,14 @@ export function FlowView({
                   const navStartX = -cardW / 2 + cardW * 0.08;
                   const navTrackW = cardW * 0.84;
                   const navGap = Math.max(1.5, 2 * p.scale);
-                  const navSegW = navWindowSize > 0
-                    ? Math.max(3, (navTrackW - navGap * (navWindowSize - 1)) / navWindowSize)
-                    : navTrackW;
+                  const navSegW =
+                    navWindowSize > 0
+                      ? Math.max(
+                          3,
+                          (navTrackW - navGap * (navWindowSize - 1)) /
+                            navWindowSize,
+                        )
+                      : navTrackW;
                   const navWindowHint =
                     events.length > BAR_WINDOW_SIZE
                       ? ` (${navWindowStart + 1}-${navWindowStart + navWindowSize})`
@@ -1237,7 +1387,9 @@ export function FlowView({
                             rx={Math.max(8, 16 * p.scale)}
                             ry={Math.max(8, 16 * p.scale)}
                             className={`flow-view__event-card ${isCurrent ? "is-current" : ""} ${critical ? "is-critical" : ""} ${warning ? "is-warning" : ""}`}
-                            style={{ ["--intent-color" as string]: intentColor }}
+                            style={{
+                              ["--intent-color" as string]: intentColor,
+                            }}
                             onClick={() => onSeek(i)}
                             role="button"
                             tabIndex={0}
@@ -1265,7 +1417,9 @@ export function FlowView({
                             className="flow-view__event-card-title"
                             fontSize={titleSize}
                           >
-                            {event.kind === "session_end" ? "Mission Complete" : levelTitle}
+                            {event.kind === "session_end"
+                              ? "Mission Complete"
+                              : levelTitle}
                           </text>
                           {event.kind !== "session_end" && (
                             <text
@@ -1277,7 +1431,9 @@ export function FlowView({
                             >
                               {(() => {
                                 const summary = getEventSummary(event);
-                                return summary.length > 48 ? `${summary.slice(0, 47)}…` : summary;
+                                return summary.length > 48
+                                  ? `${summary.slice(0, 47)}…`
+                                  : summary;
                               })()}
                             </text>
                           )}
@@ -1293,7 +1449,8 @@ export function FlowView({
                                 {`${i + 1} / ${events.length}${navWindowHint}`}
                               </text>
                               {navDisplayIndices.map((segIndex, segOffset) => {
-                                const x = navStartX + segOffset * (navSegW + navGap);
+                                const x =
+                                  navStartX + segOffset * (navSegW + navGap);
                                 const isNavCurrent = segIndex === i;
                                 return (
                                   <rect
@@ -1304,9 +1461,21 @@ export function FlowView({
                                     height={Math.max(4.5, 6 * p.scale)}
                                     rx={Math.max(1.6, 2.2 * p.scale)}
                                     ry={Math.max(1.6, 2.2 * p.scale)}
-                                    fill={isNavCurrent ? "rgba(34,211,238,0.98)" : "rgba(148,163,184,0.52)"}
-                                    stroke={isNavCurrent ? "rgba(186,230,253,0.95)" : "rgba(148,163,184,0.2)"}
-                                    strokeWidth={isNavCurrent ? Math.max(0.8, 1.1 * p.scale) : Math.max(0.4, 0.7 * p.scale)}
+                                    fill={
+                                      isNavCurrent
+                                        ? "rgba(34,211,238,0.98)"
+                                        : "rgba(148,163,184,0.52)"
+                                    }
+                                    stroke={
+                                      isNavCurrent
+                                        ? "rgba(186,230,253,0.95)"
+                                        : "rgba(148,163,184,0.2)"
+                                    }
+                                    strokeWidth={
+                                      isNavCurrent
+                                        ? Math.max(0.8, 1.1 * p.scale)
+                                        : Math.max(0.4, 0.7 * p.scale)
+                                    }
                                     style={{ cursor: "pointer" }}
                                     role="button"
                                     tabIndex={0}
@@ -1348,7 +1517,9 @@ export function FlowView({
                             rx={nodeBoxRx}
                             ry={nodeBoxRx}
                             className={`flow-view__node flow-view__node--box ${isCompleted ? "flow-view__node--completed" : ""} ${isCurrent ? "flow-view__node--current" : ""} ${isCurrent && isPlaying ? "flow-view__node--playing" : ""} ${keyMoment ? "flow-view__node--key" : ""} ${critical ? "flow-view__node--critical" : ""} ${warning ? "flow-view__node--warning" : ""}`}
-                            style={{ ["--intent-color" as string]: intentColor }}
+                            style={{
+                              ["--intent-color" as string]: intentColor,
+                            }}
                             onClick={() => onSeek(i)}
                             role="button"
                             tabIndex={0}
@@ -1419,7 +1590,10 @@ export function FlowView({
                             textAnchor="middle"
                             className="flow-view__label"
                             fill="rgba(255,255,255,0.9)"
-                            fontSize={Math.max(7, Math.round(labelFontSize * p.scale))}
+                            fontSize={Math.max(
+                              7,
+                              Math.round(labelFontSize * p.scale),
+                            )}
                           >
                             {label}
                           </text>
@@ -1443,145 +1617,175 @@ export function FlowView({
               </g>
             </svg>
           </div>
-          {!shipPerspective && <aside className="flow-view__signal-panel" aria-label="Flow signal panel">
-            <div className="flow-view__signal-title">Signal Feed</div>
-            <div className="flow-view__signal-stats">
-              <span>Key: {keyMomentIndices.length}</span>
-              <span>Critical: {criticalIndices.length}</span>
-              <span>Danger: {(criticalRatio * 100).toFixed(0)}%</span>
-            </div>
-            <div className="flow-view__signal-actions">
-              <button
-                type="button"
-                className="flow-view__signal-btn"
-                disabled={nextKeyMoment == null}
-                onClick={() => nextKeyMoment != null && onSeek(nextKeyMoment)}
-              >
-                Next Key
-              </button>
-              <button
-                type="button"
-                className="flow-view__signal-btn flow-view__signal-btn--critical"
-                disabled={nextCritical == null}
-                onClick={() => nextCritical != null && onSeek(nextCritical)}
-              >
-                Next Critical
-              </button>
-            </div>
-            <div className="flow-view__signal-list">
-              {upcomingCritical.length === 0 ? (
-                <span className="flow-view__signal-empty">No pending critical events.</span>
-              ) : (
-                upcomingCritical.map((idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className={`flow-view__signal-item ${idx === currentIndex ? "is-current" : ""}`}
-                    onClick={() => onSeek(idx)}
-                    title={`Jump to event ${idx + 1}`}
-                  >
-                    E{idx + 1} · {events[idx].kind}
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="flow-view__intent-legend">
-              {intentOrder.slice(0, 5).map((intentId) => (
-                <div key={intentId} className="flow-view__intent-chip">
-                  <span
-                    className="flow-view__intent-dot"
-                    style={{ backgroundColor: intentColorMap.get(intentId) ?? "#38bdf8" }}
-                  />
-                  <span className="flow-view__intent-name">{intentId}</span>
+          {!shipPerspective && (
+            <aside
+              className="flow-view__signal-panel"
+              aria-label="Flow signal panel"
+            >
+              <div className="flow-view__signal-title">Signal Feed</div>
+              <div className="flow-view__signal-stats">
+                <span>Key: {keyMomentIndices.length}</span>
+                <span>Critical: {criticalIndices.length}</span>
+                <span>Danger: {(criticalRatio * 100).toFixed(0)}%</span>
+              </div>
+              <div className="flow-view__signal-actions">
+                <button
+                  type="button"
+                  className="flow-view__signal-btn"
+                  disabled={nextKeyMoment == null}
+                  onClick={() => nextKeyMoment != null && onSeek(nextKeyMoment)}
+                >
+                  Next Key
+                </button>
+                <button
+                  type="button"
+                  className="flow-view__signal-btn flow-view__signal-btn--critical"
+                  disabled={nextCritical == null}
+                  onClick={() => nextCritical != null && onSeek(nextCritical)}
+                >
+                  Next Critical
+                </button>
+              </div>
+              <div className="flow-view__signal-list">
+                {upcomingCritical.length === 0 ? (
+                  <span className="flow-view__signal-empty">
+                    No pending critical events.
+                  </span>
+                ) : (
+                  upcomingCritical.map((idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`flow-view__signal-item ${idx === currentIndex ? "is-current" : ""}`}
+                      onClick={() => onSeek(idx)}
+                      title={`Jump to event ${idx + 1}`}
+                    >
+                      E{idx + 1} · {events[idx].kind}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flow-view__intent-legend">
+                {intentOrder.slice(0, 5).map((intentId) => (
+                  <div key={intentId} className="flow-view__intent-chip">
+                    <span
+                      className="flow-view__intent-dot"
+                      style={{
+                        backgroundColor:
+                          intentColorMap.get(intentId) ?? "#38bdf8",
+                      }}
+                    />
+                    <span className="flow-view__intent-name">{intentId}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flow-view__marker-legend">
+                <div className="flow-view__marker-item">
+                  <span className="flow-view__marker-glyph flow-view__marker-glyph--key">
+                    ★
+                  </span>
+                  <span>Key milestone (intent/start/end/verification)</span>
                 </div>
-              ))}
-            </div>
-            <div className="flow-view__marker-legend">
-              <div className="flow-view__marker-item">
-                <span className="flow-view__marker-glyph flow-view__marker-glyph--key">★</span>
-                <span>Key milestone (intent/start/end/verification)</span>
+                <div className="flow-view__marker-item">
+                  <span className="flow-view__marker-glyph flow-view__marker-glyph--critical">
+                    !
+                  </span>
+                  <span>Critical event (high risk / failed check)</span>
+                </div>
+                <div className="flow-view__marker-item">
+                  <span className="flow-view__marker-glyph flow-view__marker-glyph--done">
+                    ✓
+                  </span>
+                  <span>Completed in current playback run</span>
+                </div>
               </div>
-              <div className="flow-view__marker-item">
-                <span className="flow-view__marker-glyph flow-view__marker-glyph--critical">!</span>
-                <span>Critical event (high risk / failed check)</span>
-              </div>
-              <div className="flow-view__marker-item">
-                <span className="flow-view__marker-glyph flow-view__marker-glyph--done">✓</span>
-                <span>Completed in current playback run</span>
-              </div>
-            </div>
-          </aside>}
-          {shipPerspective && <aside className="flow-view__telemetry" aria-label="Telemetry">
-            <div
-              className="flow-view__telemetry-card"
-              title="Execution Pace summarizes how quickly the agent moved between events. Lower avg/p95 means smoother, faster progression."
-            >
-              <div className="flow-view__panel-title">
-                Execution Pace
-                <span
-                  className="flow-view__hint"
-                  role="img"
-                  aria-label="Execution Pace: average and p95 event-to-event transition durations from timestamps."
-                  title="Average and p95 transition durations computed from consecutive event timestamps."
-                >
-                  i
-                </span>
-              </div>
-              <div className="flow-view__bars">
-                {paceBars.map((value, i) => <span key={i} style={{ height: `${value}%` }} />)}
-              </div>
+            </aside>
+          )}
+          {shipPerspective && (
+            <aside className="flow-view__telemetry" aria-label="Telemetry">
               <div
-                className="flow-view__telemetry-value"
-                title="avg: mean transition time. p95: worst-case tail latency for transitions."
+                className="flow-view__telemetry-card"
+                title="Execution Pace summarizes how quickly the agent moved between events. Lower avg/p95 means smoother, faster progression."
               >
-                avg {formatDurationMs(avgTransitionMs)} · p95 {formatDurationMs(p95TransitionMs)}
-              </div>
-            </div>
-            <div
-              className="flow-view__telemetry-card"
-              title="Verification Health summarizes trust in outputs from verification events and intent-level coverage."
-            >
-              <div className="flow-view__panel-title">
-                Verification Health
-                <span
-                  className="flow-view__hint"
-                  role="img"
-                  aria-label="Verification Health: pass rate, pass-fail-unknown counts, and intent verification coverage."
-                  title="Pass rate track, pass/fail/unknown counts, plus verified-intent coverage when intent IDs are present."
-                >
-                  i
-                </span>
-              </div>
-              <div className="flow-view__stability-track">
+                <div className="flow-view__panel-title">
+                  Execution Pace
+                  <span
+                    className="flow-view__hint"
+                    role="img"
+                    aria-label="Execution Pace: average and p95 event-to-event transition durations from timestamps."
+                    title="Average and p95 transition durations computed from consecutive event timestamps."
+                  >
+                    i
+                  </span>
+                </div>
+                <div className="flow-view__bars">
+                  {paceBars.map((value, i) => (
+                    <span key={i} style={{ height: `${value}%` }} />
+                  ))}
+                </div>
                 <div
-                  className="flow-view__stability-fill"
-                  style={{ width: `${verificationStats.health}%` }}
-                />
+                  className="flow-view__telemetry-value"
+                  title="avg: mean transition time. p95: worst-case tail latency for transitions."
+                >
+                  avg {formatDurationMs(avgTransitionMs)} · p95{" "}
+                  {formatDurationMs(p95TransitionMs)}
+                </div>
               </div>
               <div
-                className="flow-view__telemetry-value"
-                title="Format: pass/fail/unknown counts · verified intent coverage · active duration."
+                className="flow-view__telemetry-card"
+                title="Verification Health summarizes trust in outputs from verification events and intent-level coverage."
               >
-                {verificationStats.pass}p/{verificationStats.fail}f/{verificationStats.unknown}u
-                {" · "}
-                {verificationStats.coveragePct == null ? "intent cov N/A" : `intent cov ${verificationStats.coveragePct}%`}
-                {" · "}
-                active {formatDurationMs(activeDurationMs)}
+                <div className="flow-view__panel-title">
+                  Verification Health
+                  <span
+                    className="flow-view__hint"
+                    role="img"
+                    aria-label="Verification Health: pass rate, pass-fail-unknown counts, and intent verification coverage."
+                    title="Pass rate track, pass/fail/unknown counts, plus verified-intent coverage when intent IDs are present."
+                  >
+                    i
+                  </span>
+                </div>
+                <div className="flow-view__stability-track">
+                  <div
+                    className="flow-view__stability-fill"
+                    style={{ width: `${verificationStats.health}%` }}
+                  />
+                </div>
+                <div
+                  className="flow-view__telemetry-value"
+                  title="Format: pass/fail/unknown counts · verified intent coverage · active duration."
+                >
+                  {verificationStats.pass}p/{verificationStats.fail}f/
+                  {verificationStats.unknown}u{" · "}
+                  {verificationStats.coveragePct == null
+                    ? "intent cov N/A"
+                    : `intent cov ${verificationStats.coveragePct}%`}
+                  {" · "}
+                  active {formatDurationMs(activeDurationMs)}
+                </div>
               </div>
-            </div>
-          </aside>}
+            </aside>
+          )}
           {shipPerspective && currentEvent && (
-            <aside className="flow-view__ops-panels" aria-label="Execution panels">
+            <aside
+              className="flow-view__ops-panels"
+              aria-label="Execution panels"
+            >
               <div className="flow-view__ops-card">
                 <div className="flow-view__panel-title">Execution Metadata</div>
                 <div className="flow-view__ops-list">
                   <div className="flow-view__ops-row">
                     <span>Timestamp</span>
-                    <span className="flow-view__ops-mono">{currentTimestamp}</span>
+                    <span className="flow-view__ops-mono">
+                      {currentTimestamp}
+                    </span>
                   </div>
                   <div className="flow-view__ops-row">
                     <span>Session ID</span>
-                    <span className="flow-view__ops-mono" title={session.id}>{session.id.slice(0, 12)}…</span>
+                    <span className="flow-view__ops-mono" title={session.id}>
+                      {session.id.slice(0, 12)}…
+                    </span>
                   </div>
                   <div className="flow-view__ops-row">
                     <span>Node ID</span>
@@ -1609,70 +1813,105 @@ export function FlowView({
             </aside>
           )}
           {shipPerspective && currentEvent && (
-            <section className="flow-view__event-detail-panel" aria-label="Event detail">
+            <section
+              className="flow-view__event-detail-panel"
+              aria-label="Event detail"
+            >
               <div className="flow-view__panel-title">Event Detail</div>
               <div className="flow-view__event-detail-body">
-                <CurrentEventRenderer event={currentEvent} index={currentIndex} />
+                <CurrentEventRenderer
+                  event={currentEvent}
+                  index={currentIndex}
+                />
               </div>
             </section>
           )}
-          {selectedTransactionIndex != null && events.length > 1 && selectedTransactionIndex < events.length - 1 && (
-            <aside className="flow-view__transaction-panel" aria-label="Transaction detail">
-              <div className="flow-view__transaction-card">
-                <div className="flow-view__panel-title">
-                  Transaction E{selectedTransactionIndex + 1} → E{selectedTransactionIndex + 2}
-                  <button
-                    type="button"
-                    className="flow-view__transaction-close"
-                    onClick={() => setSelectedTransactionIndex(null)}
-                    aria-label="Close transaction detail"
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="flow-view__transaction-body">
-                  <div className="flow-view__transaction-duration">
-                    <span className="flow-view__transaction-label">Duration</span>
-                    <span className="flow-view__ops-mono">
-                      {formatDurationMs(getDurationMs(events, selectedTransactionIndex, selectedTransactionIndex + 1))}
-                    </span>
-                  </div>
-                  <div className="flow-view__transaction-row">
-                    <span className="flow-view__transaction-label">From (E{selectedTransactionIndex + 1})</span>
+          {selectedTransactionIndex != null &&
+            events.length > 1 &&
+            selectedTransactionIndex < events.length - 1 && (
+              <aside
+                className="flow-view__transaction-panel"
+                aria-label="Transaction detail"
+              >
+                <div className="flow-view__transaction-card">
+                  <div className="flow-view__panel-title">
+                    Transaction E{selectedTransactionIndex + 1} → E
+                    {selectedTransactionIndex + 2}
                     <button
                       type="button"
-                      className="flow-view__transaction-seek"
-                      onClick={() => onSeek(selectedTransactionIndex)}
+                      className="flow-view__transaction-close"
+                      onClick={() => setSelectedTransactionIndex(null)}
+                      aria-label="Close transaction detail"
                     >
-                      {getEventSummary(events[selectedTransactionIndex])}
+                      ×
                     </button>
                   </div>
-                  <div className="flow-view__transaction-row">
-                    <span className="flow-view__transaction-label">To (E{selectedTransactionIndex + 2})</span>
-                    <button
-                      type="button"
-                      className="flow-view__transaction-seek"
-                      onClick={() => onSeek(selectedTransactionIndex + 1)}
-                    >
-                      {getEventSummary(events[selectedTransactionIndex + 1])}
-                    </button>
-                  </div>
-                  <div className="flow-view__transaction-meta">
-                    <div className="flow-view__ops-row">
-                      <span>From</span>
-                      <span className="flow-view__ops-mono">{formatClock(events[selectedTransactionIndex]?.ts)} · {events[selectedTransactionIndex]?.kind}</span>
+                  <div className="flow-view__transaction-body">
+                    <div className="flow-view__transaction-duration">
+                      <span className="flow-view__transaction-label">
+                        Duration
+                      </span>
+                      <span className="flow-view__ops-mono">
+                        {formatDurationMs(
+                          getDurationMs(
+                            events,
+                            selectedTransactionIndex,
+                            selectedTransactionIndex + 1,
+                          ),
+                        )}
+                      </span>
                     </div>
-                    <div className="flow-view__ops-row">
-                      <span>To</span>
-                      <span className="flow-view__ops-mono">{formatClock(events[selectedTransactionIndex + 1]?.ts)} · {events[selectedTransactionIndex + 1]?.kind}</span>
+                    <div className="flow-view__transaction-row">
+                      <span className="flow-view__transaction-label">
+                        From (E{selectedTransactionIndex + 1})
+                      </span>
+                      <button
+                        type="button"
+                        className="flow-view__transaction-seek"
+                        onClick={() => onSeek(selectedTransactionIndex)}
+                      >
+                        {getEventSummary(events[selectedTransactionIndex])}
+                      </button>
+                    </div>
+                    <div className="flow-view__transaction-row">
+                      <span className="flow-view__transaction-label">
+                        To (E{selectedTransactionIndex + 2})
+                      </span>
+                      <button
+                        type="button"
+                        className="flow-view__transaction-seek"
+                        onClick={() => onSeek(selectedTransactionIndex + 1)}
+                      >
+                        {getEventSummary(events[selectedTransactionIndex + 1])}
+                      </button>
+                    </div>
+                    <div className="flow-view__transaction-meta">
+                      <div className="flow-view__ops-row">
+                        <span>From</span>
+                        <span className="flow-view__ops-mono">
+                          {formatClock(events[selectedTransactionIndex]?.ts)} ·{" "}
+                          {events[selectedTransactionIndex]?.kind}
+                        </span>
+                      </div>
+                      <div className="flow-view__ops-row">
+                        <span>To</span>
+                        <span className="flow-view__ops-mono">
+                          {formatClock(
+                            events[selectedTransactionIndex + 1]?.ts,
+                          )}{" "}
+                          · {events[selectedTransactionIndex + 1]?.kind}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </aside>
-          )}
+              </aside>
+            )}
           <div className="flow-view__desc-panel flow-view__desc-panel--float">
-            <span className="flow-view__control-desc" title={summary || undefined}>
+            <span
+              className="flow-view__control-desc"
+              title={summary || undefined}
+            >
               Event {currentIndex + 1} of {events.length}
               {currentEvent && summary && (
                 <>
