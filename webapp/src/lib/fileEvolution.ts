@@ -51,6 +51,8 @@ export interface FileRevision {
   content: string | undefined;
   oldContent?: string;
   at?: string;
+  summary?: string;
+  action?: string;
 }
 
 export function getRevisionsForFile(session: Session, path: string): FileRevision[] {
@@ -63,22 +65,32 @@ export function getRevisionsForFile(session: Session, path: string): FileRevisio
     if (eventPath !== path) continue;
     const action = readAction(event);
     if (!action) continue;
+    const details = readDetailsObject(event);
+    const summary = readString(details.summary) ?? readString(event.payload?.summary);
 
     if (action === "create") {
       content = readNewContent(event) ?? "";
-      revisions.push({ eventIndex: i, type: "create", content, at: event.ts });
+      revisions.push({ eventIndex: i, type: "create", content, at: event.ts, summary, action });
       continue;
     }
 
     if (action === "edit") {
       const oldContent = readOldContent(event) ?? content;
       content = readNewContent(event) ?? content ?? "";
-      revisions.push({ eventIndex: i, type: "edit", content, oldContent, at: event.ts });
+      revisions.push({ eventIndex: i, type: "edit", content, oldContent, at: event.ts, summary, action });
       continue;
     }
 
     const oldContent = readOldContent(event) ?? content;
-    revisions.push({ eventIndex: i, type: "delete", content: undefined, oldContent, at: event.ts });
+    revisions.push({
+      eventIndex: i,
+      type: "delete",
+      content: undefined,
+      oldContent,
+      at: event.ts,
+      summary,
+      action,
+    });
     content = undefined;
   }
   return revisions;
@@ -91,4 +103,3 @@ export function getRevisionIndexForEvent(session: Session, path: string, eventIn
   }
   return Math.max(0, revisions.length - 1);
 }
-

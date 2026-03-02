@@ -85,6 +85,10 @@ export function FileEvolutionView({
 
   const safeIndex = Math.max(0, Math.min(revisionIndex, total - 1));
   const current = revisions[safeIndex];
+  const hasRenderableCode =
+    current.type === "delete"
+      ? current.oldContent != null && current.oldContent !== ""
+      : current.content != null && current.content !== "";
 
   return (
     <div className="file-evolution-view">
@@ -116,6 +120,19 @@ export function FileEvolutionView({
       </header>
 
       <div className="evolution-content">
+        <section className="evolution-code-section">
+          <h3 className="evolution-section-title">Revision metadata</h3>
+          <p className="event-meta">
+            Event #{current.eventIndex + 1} · {current.type}
+            {current.at ? ` · ${new Date(current.at).toLocaleString()}` : ""}
+          </p>
+          {current.summary ? <p className="event-meta">{current.summary}</p> : null}
+          {!hasRenderableCode ? (
+            <p className="event-meta">
+              Code content is not present in this log entry. This revision is represented by event metadata only.
+            </p>
+          ) : null}
+        </section>
         {current.type === "delete" ? (
           <div className="evolution-deleted">
             <p>File was deleted at this revision.</p>

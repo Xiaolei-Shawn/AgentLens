@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { CanonicalEvent } from "./event-envelope.js";
 import {
   getDashboardHost,
@@ -35,6 +36,19 @@ interface SessionPayload {
   ended_at?: string;
   events: CanonicalEvent[];
 }
+
+interface ImportedFileInput {
+  name?: string;
+  content: string;
+}
+
+interface ImportSet {
+  import_set_id: string;
+  created_at: string;
+  session_ids: string[];
+}
+
+const importSets = new Map<string, ImportSet>();
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, {
@@ -146,6 +160,15 @@ function parseSessionContent(content: string): SessionPayload {
   return toSessionPayload(events);
 }
 
+function isCanonicalSessionContent(content: string): boolean {
+  try {
+    parseSessionContent(content);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function toSessionPayload(events: CanonicalEvent[]): SessionPayload {
   const sorted = [...events].sort((a, b) => (a.seq === b.seq ? a.ts.localeCompare(b.ts) : a.seq - b.seq));
   const start = sorted.find((event) => event.kind === "session_start");
@@ -164,6 +187,164 @@ function toSessionPayload(events: CanonicalEvent[]): SessionPayload {
 function readSessionFile(absolutePath: string): SessionPayload {
   const raw = readFileSync(absolutePath, "utf-8");
   return parseSessionContent(raw);
+}
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function writeCanonicalSession(payload: SessionPayload): string {
+  const outDir = resolve(getSessionsDir());
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const safeSessionId = sanitizeFileName(payload.session_id || `sess_import_${Date.now()}`);
+  const path = join(outDir, `${safeSessionId}.jsonl`);
+  const body = payload.events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+  writeFileSync(path, body, "utf-8");
+  return path;
+}
+
+function summarizeSessionPayload(payload: SessionPayload): Omit<SessionFileSummary, "size_bytes" | "updated_at"> {
+  return {
+    key: `${sanitizeFileName(payload.session_id)}.jsonl`,
+    file: `${sanitizeFileName(payload.session_id)}.jsonl`,
+    absolute_path: join(resolve(getSessionsDir()), `${sanitizeFileName(payload.session_id)}.jsonl`),
+    session_id: payload.session_id,
+    started_at: payload.started_at,
+    ended_at: payload.ended_at,
+    goal: payload.goal,
+    outcome: deriveOutcome(payload.events),
+    event_count: payload.events.length,
+  };
+}
+
+function buildFollowupFromEvents(events: CanonicalEvent[], focus: string): {
+  insufficient_evidence: boolean;
+  confidence: number;
+  value_claims: {
+    risk_mitigation: string[];
+    efficiency_improvement: string[];
+    quality_standardization: string[];
+  };
+  evidence_refs: Array<{ event_id: string; file?: string; reason: string }>;
+  rule_spec: Record<string, unknown>;
+  skill_draft: string;
+} {
+  const risks = events.filter((event) => event.kind === "risk_signal");
+  const fails = events.filter(
+    (event) => event.kind === "verification" && event.payload?.result === "fail"
+  );
+  const hotspots = events.filter((event) => event.kind === "hotspot");
+  const repeatedFileOps = events.filter((event) => event.kind === "file_op");
+  const evidence_refs: Array<{ event_id: string; file?: string; reason: string }> = [];
+
+  for (const event of [...risks, ...fails, ...hotspots].slice(0, 6)) {
+    const file = typeof event.scope?.file === "string" ? event.scope.file : undefined;
+    evidence_refs.push({
+      event_id: event.id,
+      file,
+      reason: `Signal from ${event.kind}`,
+    });
+  }
+
+  const risk_mitigation: string[] = [];
+  const efficiency_improvement: string[] = [];
+  const quality_standardization: string[] = [];
+
+  if (risks.length > 0) {
+    risk_mitigation.push("Adds mandatory risk checks before accepting high-risk changes.");
+  }
+  if (fails.length > 0) {
+    risk_mitigation.push("Requires verification pass gates for changed high-impact files.");
+    quality_standardization.push("Standardizes failure handling workflow after failed checks.");
+  }
+  if (hotspots.length > 0 || repeatedFileOps.length > 8) {
+    efficiency_improvement.push("Reduces rework by enforcing early validation and smaller scoped edits.");
+  }
+  if (quality_standardization.length === 0 && (risks.length > 0 || hotspots.length > 0)) {
+    quality_standardization.push("Defines a repeatable execution sequence for similar tasks.");
+  }
+
+  const hasEvidence =
+    evidence_refs.length > 0 ||
+    risks.length > 0 ||
+    fails.length > 0 ||
+    hotspots.length > 0 ||
+    repeatedFileOps.length > 0;
+
+  const insufficient_evidence = !hasEvidence;
+  const confidence = insufficient_evidence
+    ? 0.25
+    : Math.min(0.92, 0.45 + risks.length * 0.08 + fails.length * 0.1 + hotspots.length * 0.06);
+
+  const rule_spec: Record<string, unknown> = {
+    version: 1,
+    focus,
+    problem_addressed:
+      focus === "verification_gap"
+        ? "Repeated or unresolved verification gaps in similar tasks."
+        : focus === "hotspot"
+        ? "High-churn hotspots and regression-prone edit areas."
+        : "Recurring risk and quality issues in agent workflow.",
+    value_statement: [
+      ...risk_mitigation.slice(0, 1),
+      ...efficiency_improvement.slice(0, 1),
+      ...quality_standardization.slice(0, 1),
+    ],
+    expected_outcome: {
+      risk_reduction: risks.length > 0 || fails.length > 0,
+      reduced_rework: hotspots.length > 0 || repeatedFileOps.length > 8,
+      consistent_quality: true,
+    },
+    when_to_apply: "Use when similar task shape appears (same repo/module/risk pattern).",
+    when_not_to_apply: "Skip for exploratory spikes without production-quality expectations.",
+    checks: [
+      "Run scoped verification after each high-impact file change.",
+      "Require final pass/fail evidence before completion.",
+      "Capture assumptions and validate unresolved high-risk assumptions.",
+    ],
+    evidence_refs,
+  };
+
+  const skill_draft = [
+    "# Skill: Standardized Task Guardrails",
+    "",
+    "## Purpose",
+    "Apply a repeatable workflow that mitigates known risks and reduces rework for similar tasks.",
+    "",
+    "## Value",
+    risk_mitigation[0] ?? "Mitigates common risk patterns from prior sessions.",
+    efficiency_improvement[0] ?? "Improves efficiency by reducing late-stage rework.",
+    quality_standardization[0] ?? "Standardizes quality checks for consistent outcomes.",
+    "",
+    "## When to use",
+    "- Similar files/modules and risk profile as referenced evidence.",
+    "",
+    "## When not to use",
+    "- One-off exploration where strict quality gates are intentionally deferred.",
+    "",
+    "## Workflow",
+    "1. Capture intent and impact scope.",
+    "2. Apply small edits and run scoped checks immediately.",
+    "3. Resolve failed checks before continuing.",
+    "4. Summarize risks, mitigations, and final verification evidence.",
+    "",
+    "## Evidence anchors",
+    ...evidence_refs.map((item) => `- ${item.event_id}${item.file ? ` (${item.file})` : ""}: ${item.reason}`),
+    "",
+  ].join("\n");
+
+  return {
+    insufficient_evidence,
+    confidence: Number(confidence.toFixed(2)),
+    value_claims: {
+      risk_mitigation,
+      efficiency_improvement,
+      quality_standardization,
+    },
+    evidence_refs,
+    rule_spec,
+    skill_draft,
+  };
 }
 
 function deriveOutcome(events: CanonicalEvent[]): SessionFileSummary["outcome"] {
@@ -349,6 +530,177 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         dedupe: body.dedupe === false ? false : true,
       });
       json(res, 200, result);
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/import/mcp") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const filesRaw = Array.isArray(body.files) ? body.files : [];
+      if (filesRaw.length === 0) {
+        json(res, 400, { error: "Missing `files` array. Provide one or more MCP canonical session logs." });
+        return true;
+      }
+
+      const accepted: SessionFileSummary[] = [];
+      const rejected_files: Array<{ name: string; error: string }> = [];
+
+      for (const item of filesRaw) {
+        const file = item as ImportedFileInput;
+        const name = typeof file.name === "string" && file.name.trim() !== "" ? file.name : "unnamed";
+        if (typeof file.content !== "string" || file.content.trim() === "") {
+          rejected_files.push({ name, error: "File content is empty." });
+          continue;
+        }
+        try {
+          const payload = parseSessionContent(file.content);
+          writeCanonicalSession(payload);
+          const summary = summarizeSessionPayload(payload);
+          accepted.push({
+            ...summary,
+            size_bytes: Buffer.byteLength(file.content, "utf-8"),
+            updated_at: new Date().toISOString(),
+          });
+        } catch (error) {
+          rejected_files.push({
+            name,
+            error:
+              error instanceof Error
+                ? `Not a canonical MCP session log: ${error.message}`
+                : "Not a canonical MCP session log.",
+          });
+        }
+      }
+
+      if (accepted.length === 0) {
+        json(res, 400, {
+          error: "No canonical MCP session logs were accepted.",
+          rejected_files,
+        });
+        return true;
+      }
+
+      const import_set_id = `iset_${Date.now()}_${randomUUID().slice(0, 8)}`;
+      importSets.set(import_set_id, {
+        import_set_id,
+        created_at: new Date().toISOString(),
+        session_ids: [...new Set(accepted.map((item) => item.session_id))],
+      });
+
+      json(res, 200, {
+        import_set_id,
+        sessions: accepted,
+        rejected_files,
+        guidance:
+          "Import only relevant or consecutive sessions from the same thread/conversation to avoid noisy insights.",
+      });
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/import/raw-merge") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const importSetId = typeof body.import_set_id === "string" ? body.import_set_id : "";
+      const targetSessionId = typeof body.target_session_id === "string" ? body.target_session_id : "";
+      const raw = typeof body.raw === "string" ? body.raw : "";
+      if (!importSetId || !targetSessionId) {
+        json(res, 400, { error: "Missing `import_set_id` or `target_session_id`." });
+        return true;
+      }
+      if (!raw.trim()) {
+        json(res, 400, { error: "Missing raw log content." });
+        return true;
+      }
+      const importSet = importSets.get(importSetId);
+      if (!importSet) {
+        json(res, 404, { error: "Import set not found. Start by importing MCP logs first." });
+        return true;
+      }
+      if (!importSet.session_ids.includes(targetSessionId)) {
+        json(res, 400, { error: "target_session_id is not part of the selected import set." });
+        return true;
+      }
+      if (isCanonicalSessionContent(raw)) {
+        json(res, 400, {
+          error: "Raw merge accepts only raw Codex/Cursor logs. Use /api/import/mcp for canonical session logs.",
+        });
+        return true;
+      }
+
+      const result = ingestRawContent(raw, {
+        adapter: typeof body.adapter === "string" ? body.adapter : "auto",
+        merge_session_id: targetSessionId,
+        dedupe: body.dedupe === false ? false : true,
+      });
+      json(res, 200, {
+        ...result,
+        guidance: "Raw logs were merged into your imported MCP baseline session.",
+      });
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/followup/generate") {
+    if (req.method !== "POST") {
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const scope = typeof body.scope === "string" ? body.scope : "session";
+      const focus = typeof body.focus === "string" ? body.focus : "risk";
+      const importSetId = typeof body.import_set_id === "string" ? body.import_set_id : "";
+      const sessionId = typeof body.session_id === "string" ? body.session_id : "";
+      const summaries = listSessionFiles();
+
+      const scopedSessionIds =
+        scope === "import_set" && importSetId && importSets.get(importSetId)
+          ? importSets.get(importSetId)?.session_ids ?? []
+          : sessionId
+          ? [sessionId]
+          : [];
+
+      if (scopedSessionIds.length === 0) {
+        json(res, 400, { error: "Provide `session_id` or a valid import-set scope." });
+        return true;
+      }
+
+      const collectedEvents: CanonicalEvent[] = [];
+      for (const id of scopedSessionIds) {
+        const summary = summaries.find((item) => item.session_id === id);
+        if (!summary) continue;
+        const payload = readSessionFile(summary.absolute_path);
+        collectedEvents.push(...payload.events);
+      }
+      if (collectedEvents.length === 0) {
+        json(res, 404, { error: "No events found for requested follow-up scope." });
+        return true;
+      }
+
+      const generated = buildFollowupFromEvents(collectedEvents, focus);
+      json(res, 200, {
+        scope,
+        focus,
+        session_ids: scopedSessionIds,
+        generated_at: new Date().toISOString(),
+        ...generated,
+      });
     } catch (error) {
       json(res, 400, { error: error instanceof Error ? error.message : String(error) });
     }

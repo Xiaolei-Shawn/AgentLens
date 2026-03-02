@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { Session } from "../types/session";
 import { getSegments } from "../lib/segments";
-import { getRevisionIndexForEvent } from "../lib/fileEvolution";
+import { getChangedFiles, getRevisionIndexForEvent } from "../lib/fileEvolution";
 import { runAuditPostProcessing } from "../lib/auditPipeline";
 import { PlanNodesPanel } from "./PlanNodesPanel";
 import { ChangedFilesList } from "./ChangedFilesList";
@@ -12,6 +12,7 @@ import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
+import { ContextPathView } from "./ContextPathView";
 
 import "./ReplayView.css";
 
@@ -22,12 +23,28 @@ interface ReplayViewProps {
   onBack: () => void;
 }
 
+interface FollowupGenerateResponse {
+  insufficient_evidence: boolean;
+  confidence: number;
+  value_claims: {
+    risk_mitigation: string[];
+    efficiency_improvement: string[];
+    quality_standardization: string[];
+  };
+  evidence_refs: Array<{ event_id: string; file?: string; reason: string }>;
+  rule_spec: Record<string, unknown>;
+  skill_draft: string;
+}
+
+const API_BASE = (import.meta.env.VITE_AUDIT_API_BASE as string | undefined)?.trim() ?? "";
+
 export function ReplayView({ session, onBack }: ReplayViewProps) {
   const segments = getSegments(session);
   const { normalized, reviewer } = useMemo(
     () => runAuditPostProcessing(session.events),
     [session.events]
   );
+  const changedFiles = useMemo(() => getChangedFiles(session), [session]);
 
   const criticalEvents = useMemo(() => {
     const out: Array<{ index: number; severity: "high" | "medium"; reason: string }> = [];
@@ -72,9 +89,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
   const [viewMode, setViewMode] = useState<"timeline" | "pivot">("timeline");
-  const [timelineTab, setTimelineTab] = useState<"session" | "reviewer">("session");
+  const [timelineTab, setTimelineTab] = useState<"deliverables" | "context" | "reviewer">("deliverables");
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
+  const [followupResult, setFollowupResult] = useState<FollowupGenerateResponse | null>(null);
+  const [followupStatus, setFollowupStatus] = useState<string>("");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWorkflowView = viewMode === "pivot";
@@ -164,6 +183,28 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const handlePlay = useCallback(() => setIsPlaying(true), []);
   const handlePause = useCallback(() => stopPlayback(), [stopPlayback]);
 
+  const handleGenerateFollowup = useCallback(async () => {
+    setFollowupStatus("Generating rule + skill draft...");
+    setFollowupResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/followup/generate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scope: "session",
+          session_id: session.id,
+          focus: "risk",
+        }),
+      });
+      const data = (await response.json()) as FollowupGenerateResponse & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? `Follow-up generation failed (${response.status})`);
+      setFollowupResult(data);
+      setFollowupStatus("Follow-up artifacts generated.");
+    } catch (error) {
+      setFollowupStatus(error instanceof Error ? error.message : "Failed to generate follow-up artifacts.");
+    }
+  }, [session.id]);
+
   const selectedSegment =
     selectedSegmentIndex != null && segments[selectedSegmentIndex]
       ? segments[selectedSegmentIndex]
@@ -218,7 +259,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </div>
       </header>
       <div className="replay-layout">
-        {viewMode === "timeline" && timelineTab === "session" && (
+        {viewMode === "timeline" && timelineTab === "deliverables" && (
           <aside className="replay-sidebar">
             <PlanNodesPanel
               session={session}
@@ -237,10 +278,17 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             <div className="replay-subtabs">
               <button
                 type="button"
-                className={timelineTab === "session" ? "active" : ""}
-                onClick={() => setTimelineTab("session")}
+                className={timelineTab === "deliverables" ? "active" : ""}
+                onClick={() => setTimelineTab("deliverables")}
               >
-                Trace
+                Deliverables
+              </button>
+              <button
+                type="button"
+                className={timelineTab === "context" ? "active" : ""}
+                onClick={() => setTimelineTab("context")}
+              >
+                Context
               </button>
               <button
                 type="button"
@@ -276,6 +324,12 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     criticalEvents={criticalEvents}
                   />
                 </>
+              ) : timelineTab === "context" ? (
+                <ContextPathView
+                  session={session}
+                  currentIndex={currentIndex}
+                  onSeek={handleSeek}
+                />
               ) : selectedFilePath ? (
                 <FileEvolutionView
                   session={session}
@@ -284,15 +338,83 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   onRevisionChange={setSelectedRevisionIndex}
                 />
               ) : selectedSegment ? (
-                <SegmentDetailView
-                  session={session}
-                  segment={selectedSegment}
-                  segmentIndex={selectedSegmentIndex ?? 0}
-                  onOpenFileEvolution={handleOpenFileEvolution}
-                />
+                <>
+                  <section className="reviewer-highlights">
+                    <header className="reviewer-highlights__header">
+                      <h2>Deliverable Summary</h2>
+                      <span>Clean summary first, details on demand.</span>
+                    </header>
+                    <div className="reviewer-highlights__grid">
+                      <article className="reviewer-highlights__card">
+                        <h3>Outcome</h3>
+                        <p>
+                          {reviewer.outcome} · confidence {Math.round(reviewer.confidence_estimate * 100)}%
+                        </p>
+                        <p>{reviewer.goal}</p>
+                      </article>
+                      <article className="reviewer-highlights__card">
+                        <h3>Changed Scope</h3>
+                        <p>{changedFiles.length} files changed</p>
+                        <p>{normalized.impacts.length} impact artifact(s)</p>
+                      </article>
+                      <article className="reviewer-highlights__card">
+                        <h3>Quality & Risk</h3>
+                        <p>
+                          Checks: {reviewer.verification_summary.pass} pass /{" "}
+                          {reviewer.verification_summary.fail} fail / {reviewer.verification_summary.unknown} unknown
+                        </p>
+                        <p>
+                          High-risk items:{" "}
+                          {
+                            reviewer.high_risk_items.filter((item) => item.level === "high")
+                              .length
+                          }
+                        </p>
+                      </article>
+                    </div>
+                  </section>
+                  <SegmentDetailView
+                    session={session}
+                    segment={selectedSegment}
+                    segmentIndex={selectedSegmentIndex ?? 0}
+                    onOpenFileEvolution={handleOpenFileEvolution}
+                  />
+                  <section className="reviewer-focus">
+                    <header className="reviewer-focus__alert">
+                      <h2>User-Triggered Workflow Standardization</h2>
+                      <p>Generate a rule + skill draft only when you want to standardize similar future tasks.</p>
+                    </header>
+                    <button type="button" className="browse-btn" onClick={() => void handleGenerateFollowup()}>
+                      Generate Follow-up Rule/Skill
+                    </button>
+                    {followupStatus ? <p>{followupStatus}</p> : null}
+                    {followupResult ? (
+                      <div className="reviewer-focus__grid reviewer-focus__grid--2">
+                        <article className="reviewer-focus__card">
+                          <h3>Why this helps</h3>
+                          <ul>
+                            {followupResult.value_claims.risk_mitigation.map((item, index) => (
+                              <li key={`risk-${index}`}>{item}</li>
+                            ))}
+                            {followupResult.value_claims.efficiency_improvement.map((item, index) => (
+                              <li key={`eff-${index}`}>{item}</li>
+                            ))}
+                            {followupResult.value_claims.quality_standardization.map((item, index) => (
+                              <li key={`qual-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="reviewer-focus__card">
+                          <h3>Skill Draft Preview</h3>
+                          <pre className="code-block">{followupResult.skill_draft}</pre>
+                        </article>
+                      </div>
+                    ) : null}
+                  </section>
+                </>
               ) : (
                 <div className="replay-placeholder">
-                  <p>Select a plan step or a changed file on the left.</p>
+                  <p>Select a changed file or plan step to open deliverable details.</p>
                   {segments.length === 0 && (
                     <p className="replay-placeholder-note">
                       This session has no explicit intent boundaries. The UI can still

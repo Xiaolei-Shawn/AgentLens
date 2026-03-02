@@ -20,14 +20,56 @@ interface LocalSessionSummary {
   updated_at: string;
 }
 
+interface McpImportResponse {
+  import_set_id: string;
+  sessions?: LocalSessionSummary[];
+  rejected_files?: Array<{ name: string; error: string }>;
+  guidance?: string;
+}
+
 const API_BASE = (import.meta.env.VITE_AUDIT_API_BASE as string | undefined)?.trim() ?? "";
 
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsText(file);
+  });
+}
+
 export function LoadSession({ onLoad, onError }: LoadSessionProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isDragActive, setIsDragActive] = useState(false);
+  const mcpInputRef = useRef<HTMLInputElement>(null);
+  const rawInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingLocal, setIsLoadingLocal] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localSessions, setLocalSessions] = useState<LocalSessionSummary[]>([]);
+  const [importSetId, setImportSetId] = useState<string | null>(null);
+  const [importedSessions, setImportedSessions] = useState<LocalSessionSummary[]>([]);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [rawMergeStatus, setRawMergeStatus] = useState<string | null>(null);
+  const [rawTargetSessionId, setRawTargetSessionId] = useState<string>("");
+
+  const openSessionById = useCallback(
+    async (sessionId: string) => {
+      if (!sessionId) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "GET",
+        });
+        if (!response.ok) throw new Error(`Failed to open session (${response.status})`);
+        const data = (await response.json()) as unknown;
+        const result = validateSession(data);
+        if (!result.success) {
+          throw new Error(result.errors.map((e) => `${e.instancePath}: ${e.message ?? e.keyword}`).join("\n"));
+        }
+        onLoad(result.data);
+      } catch (err) {
+        onError(err instanceof Error ? err.message : "Failed to open imported session.");
+      }
+    },
+    [onError, onLoad]
+  );
 
   const fetchLocalSessions = useCallback(async () => {
     setIsLoadingLocal(true);
@@ -71,126 +113,172 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
     [onError, onLoad]
   );
 
-  const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader();
-      reader.onload = () => {
+  const handleImportMcpFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      try {
+        setImportStatus("Importing canonical MCP logs...");
+        const payloadFiles = await Promise.all(
+          Array.from(files).map(async (file) => ({
+            name: file.name,
+            content: await readFileAsText(file),
+          }))
+        );
+        const response = await fetch(`${API_BASE}/api/import/mcp`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ files: payloadFiles }),
+        });
+        const data = (await response.json()) as McpImportResponse & { error?: string };
+        if (!response.ok) throw new Error(data.error ?? `MCP import failed (${response.status})`);
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        setImportSetId(data.import_set_id);
+        setImportedSessions(sessions);
+        setRawTargetSessionId(sessions[0]?.session_id ?? "");
+        const rejected = Array.isArray(data.rejected_files) ? data.rejected_files.length : 0;
+        setImportStatus(
+          `Imported ${sessions.length} MCP session(s).${rejected > 0 ? ` Rejected ${rejected} invalid file(s).` : ""}`
+        );
+        await fetchLocalSessions();
+      } catch (err) {
+        // Fallback: allow direct local canonical load when dashboard API is stale/unavailable.
         try {
-          const result = validateSession(reader.result);
-          if (result.success) {
-            onLoad(result.data);
-          } else {
-            onError(result.errors.map((e) => `${e.instancePath}: ${e.message ?? e.keyword}`).join("\n"));
+          const first = files[0];
+          if (!first) throw err;
+          const text = await readFileAsText(first);
+          const localResult = validateSession(text);
+          if (!localResult.success) {
+            throw new Error(
+              localResult.errors.map((e) => `${e.instancePath}: ${e.message ?? e.keyword}`).join("\n")
+            );
           }
-        } catch (err) {
-          onError(err instanceof Error ? err.message : "Invalid JSON");
+          onLoad(localResult.data);
+          setImportStatus(
+            "Loaded canonical MCP session locally (API import unavailable). Restart dashboard server to persist import sets."
+          );
+          return;
+        } catch {
+          const message = err instanceof Error ? err.message : "Failed to import MCP sessions.";
+          setImportStatus(message);
+          onError(message);
         }
-      };
-      reader.readAsText(file);
+      }
     },
-    [onLoad, onError]
+    [fetchLocalSessions, onError, onLoad]
   );
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragActive(false);
-      const file = e.dataTransfer.files[0];
-      if (file && (file.name.endsWith(".json") || file.name.endsWith(".jsonl"))) handleFile(file);
-      else onError("Please drop a .json or .jsonl file.");
+  const handleMergeRawLog = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      if (!importSetId || !rawTargetSessionId) {
+        onError("Import canonical MCP sessions first, then select a target session for raw merge.");
+        return;
+      }
+      try {
+        setRawMergeStatus("Merging raw log...");
+        const raw = await readFileAsText(files[0]);
+        const response = await fetch(`${API_BASE}/api/import/raw-merge`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            import_set_id: importSetId,
+            target_session_id: rawTargetSessionId,
+            raw,
+            adapter: "auto",
+            dedupe: true,
+          }),
+        });
+        const data = (await response.json()) as {
+          error?: string;
+          inserted?: number;
+          skipped_duplicates?: number;
+        };
+        if (!response.ok) throw new Error(data.error ?? `Raw merge failed (${response.status})`);
+        setRawMergeStatus(
+          `Merged raw log. Inserted ${data.inserted ?? 0} event(s), skipped ${data.skipped_duplicates ?? 0} duplicate(s).`
+        );
+        await fetchLocalSessions();
+        await openSessionById(rawTargetSessionId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to merge raw log.";
+        setRawMergeStatus(message);
+        onError(message);
+      }
     },
-    [handleFile, onError]
-  );
-
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!isDragActive) setIsDragActive(true);
-  }, [isDragActive]);
-  const onDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const nextTarget = e.relatedTarget as Node | null;
-    if (!nextTarget || !e.currentTarget.contains(nextTarget)) {
-      setIsDragActive(false);
-    }
-  }, []);
-
-  const onInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
-      e.target.value = "";
-    },
-    [handleFile]
+    [fetchLocalSessions, importSetId, onError, openSessionById, rawTargetSessionId]
   );
 
   return (
-    <div
-      className={`load-session ${isDragActive ? "is-drag-active" : ""}`}
-      onDrop={onDrop}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-    >
+    <div className="load-session">
       <div className="load-session__stars" aria-hidden />
       <div className="load-session__nebula load-session__nebula--one" aria-hidden />
       <div className="load-session__nebula load-session__nebula--two" aria-hidden />
       <div className="load-session__hud-line" aria-hidden />
-      <div className="load-session__travel" aria-hidden>
-        <svg viewBox="0 0 1200 680" preserveAspectRatio="none" className="load-session__travel-svg">
-          <defs>
-            <linearGradient id="travelPath" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(56,189,248,0.18)" />
-              <stop offset="55%" stopColor="rgba(34,211,238,0.36)" />
-              <stop offset="100%" stopColor="rgba(16,185,129,0.26)" />
-            </linearGradient>
-          </defs>
-          <path
-            id="travel-route"
-            d="M 60 520 C 220 420, 320 490, 470 370 C 620 250, 760 310, 900 210 C 1000 140, 1110 170, 1160 88"
-            className="load-session__travel-route"
-          />
-          <path
-            d="M 60 520 C 220 420, 320 490, 470 370 C 620 250, 760 310, 900 210 C 1000 140, 1110 170, 1160 88"
-            className="load-session__travel-route-dash"
-          />
-          <circle cx="470" cy="370" r="6" className="load-session__travel-node" />
-          <circle cx="900" cy="210" r="6" className="load-session__travel-node" />
-          <circle cx="1160" cy="88" r="6" className="load-session__travel-node" />
-          <circle r="7" className="load-session__travel-signal">
-            <animateMotion
-              dur="4.8s"
-              repeatCount="indefinite"
-              rotate="auto"
-              path="M 60 520 C 220 420, 320 490, 470 370 C 620 250, 760 310, 900 210 C 1000 140, 1110 170, 1160 88"
-            />
-          </circle>
-        </svg>
-      </div>
       <div className="load-session__panel">
-        <div className="load-session__eyebrow">Agent Lifecycle Console</div>
-        <h1>Launch Session Replay</h1>
+        <div className="load-session__eyebrow">AgentLens Fusion Console</div>
+        <h1>Start With Canonical MCP Logs</h1>
         <p>
-          Import one session file to activate timeline, pivot, and reviewer intelligence.
+          Step 1 imports one or more canonical MCP session logs. Step 2 optionally merges raw Codex/Cursor logs into
+          your selected imported session.
         </p>
         <div className="load-session__chips" aria-hidden>
-          <span>JSON / JSONL</span>
-          <span>Risk + Impact</span>
-          <span>Mission Replay</span>
+          <span>MCP-first import</span>
+          <span>Raw merge only</span>
+          <span>Relevance by user</span>
         </div>
       </div>
-      <div className="load-session__dropzone" role="region" aria-label="Session file drop zone">
-        <div className="load-session__drop-icon" aria-hidden>
-          ⬡
-        </div>
-        <div className="load-session__drop-title">
-          {isDragActive ? "Release to Import" : "Drop Session File Here"}
-        </div>
+
+      <div className="load-session__dropzone" role="region" aria-label="MCP import">
+        <div className="load-session__drop-title">Step 1: Import MCP Session Logs</div>
         <div className="load-session__drop-subtitle">
-          or use the command below
+          Recommended: import only relevant or consecutive sessions from the same conversation/thread.
         </div>
-        <button type="button" onClick={() => inputRef.current?.click()} className="browse-btn">
-          Import Session File
+        <button type="button" onClick={() => mcpInputRef.current?.click()} className="browse-btn">
+          Import Canonical MCP Files
         </button>
+        {importStatus ? <p className="load-session__local-empty">{importStatus}</p> : null}
       </div>
+
+      <div className="load-session__dropzone" role="region" aria-label="Raw merge">
+        <div className="load-session__drop-title">Step 2: Optional Raw Log Merge</div>
+        <div className="load-session__drop-subtitle">
+          Raw merge is available only after MCP import and only merges into an imported target session.
+        </div>
+        <select
+          className="browse-btn"
+          value={rawTargetSessionId}
+          onChange={(event) => setRawTargetSessionId(event.target.value)}
+          disabled={importedSessions.length === 0}
+          aria-label="Select merge target session"
+        >
+          {importedSessions.length === 0 ? (
+            <option value="">Import MCP sessions first</option>
+          ) : null}
+          {importedSessions.map((session) => (
+            <option key={session.session_id} value={session.session_id}>
+              {session.goal ?? session.session_id}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => rawInputRef.current?.click()}
+          className="browse-btn"
+          disabled={!importSetId || !rawTargetSessionId}
+        >
+          Merge Raw Codex/Cursor Log
+        </button>
+        <button
+          type="button"
+          onClick={() => void openSessionById(rawTargetSessionId)}
+          className="browse-btn"
+          disabled={!rawTargetSessionId}
+        >
+          Open Selected Session
+        </button>
+        {rawMergeStatus ? <p className="load-session__local-empty">{rawMergeStatus}</p> : null}
+      </div>
+
       <div className="load-session__local">
         <div className="load-session__local-head">
           <h2>Local Sessions</h2>
@@ -204,15 +292,13 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           </button>
         </div>
         {localError ? (
-          <p className="load-session__local-error">
-            Local dashboard API unavailable ({localError}). File import still works.
-          </p>
+          <p className="load-session__local-error">Local dashboard API unavailable ({localError}).</p>
         ) : null}
         {!localError && localSessions.length === 0 ? (
           <p className="load-session__local-empty">No session files found in local storage.</p>
         ) : null}
         <div className="load-session__local-list">
-          {localSessions.slice(0, 12).map((session) => (
+          {localSessions.slice(0, 16).map((session) => (
             <button
               type="button"
               key={`${session.key}-${session.updated_at}`}
@@ -222,21 +308,40 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
             >
               <div className="load-session__local-title">{session.goal ?? session.session_id}</div>
               <div className="load-session__local-meta">
-                {session.event_count} events · {session.outcome ?? "unknown"} · {new Date(session.updated_at).toLocaleString()}
+                {session.event_count} events · {session.outcome ?? "unknown"} ·{" "}
+                {new Date(session.updated_at).toLocaleString()}
               </div>
             </button>
           ))}
         </div>
       </div>
+
       <input
-        ref={inputRef}
+        ref={mcpInputRef}
         type="file"
+        multiple
         accept=".json,.jsonl,application/json"
-        onChange={onInputChange}
         className="file-input"
-        aria-label="Choose session JSON"
+        onChange={(event) => {
+          void handleImportMcpFiles(event.target.files);
+          event.target.value = "";
+        }}
+        aria-label="Choose canonical MCP session files"
       />
-      <div className="load-session__footnote">Local-only dashboard: browser is a viewer for on-device session files</div>
+      <input
+        ref={rawInputRef}
+        type="file"
+        accept=".json,.jsonl,.txt,text/plain,application/json"
+        className="file-input"
+        onChange={(event) => {
+          void handleMergeRawLog(event.target.files);
+          event.target.value = "";
+        }}
+        aria-label="Choose raw log file to merge"
+      />
+      <div className="load-session__footnote">
+        Session Fusion rule: MCP canonical logs first, raw logs second. User-curated relevance is required.
+      </div>
     </div>
   );
 }
