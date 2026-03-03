@@ -53,6 +53,8 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
   const [rawMergeStatus, setRawMergeStatus] = useState<string | null>(null);
   const [rawTargetSessionId, setRawTargetSessionId] = useState<string>("");
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [pendingMcpFiles, setPendingMcpFiles] = useState<File[]>([]);
+  const [selectionExpanded, setSelectionExpanded] = useState(false);
 
   const openSessionById = useCallback(
     async (sessionId: string) => {
@@ -147,12 +149,17 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
   );
 
   const handleImportMcpFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
+    async (files: FileList | File[] | null) => {
+      const fileArray = !files
+        ? []
+        : Array.isArray(files)
+          ? files
+          : Array.from(files);
+      if (fileArray.length === 0) return;
       try {
         setImportStatus("Importing canonical MCP logs...");
         const payloadFiles = await Promise.all(
-          Array.from(files).map(async (file) => ({
+          fileArray.map(async (file) => ({
             name: file.name,
             content: await readFileAsText(file),
           })),
@@ -179,11 +186,13 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         setImportStatus(
           `Imported ${sessions.length} MCP session(s).${rejected > 0 ? ` Rejected ${rejected} invalid file(s).` : ""}`,
         );
+        setPendingMcpFiles([]);
+        setSelectionExpanded(false);
         await fetchLocalSessions();
       } catch (err) {
         // Fallback: allow direct local canonical load when dashboard API is stale/unavailable.
         try {
-          const first = files[0];
+          const first = fileArray[0];
           if (!first) throw err;
           const text = await readFileAsText(first);
           const localResult = validateSession(text);
@@ -198,6 +207,8 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           setImportStatus(
             "Loaded canonical MCP session locally (API import unavailable). Restart dashboard server to persist import sets.",
           );
+          setPendingMcpFiles([]);
+          setSelectionExpanded(false);
           return;
         } catch {
           const message =
@@ -211,6 +222,26 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
     },
     [fetchLocalSessions, onError, onLoad],
   );
+
+  const addPendingMcpFiles = useCallback((files: File[] | FileList | null) => {
+    const list = !files ? [] : Array.isArray(files) ? files : Array.from(files);
+    if (list.length === 0) return;
+    setPendingMcpFiles((prev) => {
+      const names = new Set(prev.map((f) => f.name));
+      const added = list.filter((f) => !names.has(f.name));
+      return prev.concat(added);
+    });
+    setSelectionExpanded(true);
+  }, []);
+
+  const removePendingMcpFile = useCallback((index: number) => {
+    setPendingMcpFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const importPendingMcpFiles = useCallback(() => {
+    if (pendingMcpFiles.length === 0) return;
+    void handleImportMcpFiles(pendingMcpFiles);
+  }, [pendingMcpFiles, handleImportMcpFiles]);
 
   const handleMergeRawLog = useCallback(
     async (files: FileList | null) => {
@@ -325,66 +356,150 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
             <div className="load-session__step-content">
               <h2 className="load-session__step-title">Session Logs</h2>
               <div
-                className="load-session__dropzone load-session__dropzone--primary"
-                onClick={() => mcpInputRef.current?.click()}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && mcpInputRef.current?.click()
+                className={`load-session__dropzone load-session__dropzone--primary ${pendingMcpFiles.length === 0 ? "load-session__dropzone--browse" : ""}`}
+                onClick={
+                  pendingMcpFiles.length === 0
+                    ? () => mcpInputRef.current?.click()
+                    : undefined
                 }
-                role="button"
-                tabIndex={0}
-                aria-label="Import canonical MCP files"
+                onKeyDown={
+                  pendingMcpFiles.length === 0
+                    ? (e) => e.key === "Enter" && mcpInputRef.current?.click()
+                    : undefined
+                }
+                role={pendingMcpFiles.length === 0 ? "button" : undefined}
+                tabIndex={pendingMcpFiles.length === 0 ? 0 : undefined}
+                aria-label={
+                  pendingMcpFiles.length === 0
+                    ? "Import canonical MCP files"
+                    : undefined
+                }
               >
-                <div
-                  className="load-session__drop-icon load-session__drop-icon--doc"
-                  aria-hidden
-                >
-                  <svg
-                    width="32"
-                    height="32"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                </div>
-                <div className="load-session__drop-title">
-                  Import Canonical MCP Files
-                </div>
-                <p className="load-session__drop-desc">{step1Instruction}</p>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    mcpInputRef.current?.click();
-                  }}
-                  className="load-session__browse-btn"
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                  Browse Files
-                </button>
-                <p className="load-session__drop-formats">
-                  Supported formats: .json, .log, .mcp
-                </p>
+                {pendingMcpFiles.length === 0 ? (
+                  <>
+                    <div
+                      className="load-session__drop-icon load-session__drop-icon--doc"
+                      aria-hidden
+                    >
+                      <svg
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10 9 9 9 8 9" />
+                      </svg>
+                    </div>
+                    <div className="load-session__drop-title">
+                      Import Canonical MCP Files
+                    </div>
+                    <p className="load-session__drop-desc">{step1Instruction}</p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        mcpInputRef.current?.click();
+                      }}
+                      className="load-session__browse-btn"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      Browse Files
+                    </button>
+                    <p className="load-session__drop-formats">
+                      Supported formats: .json, .log, .mcp
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="load-session__drop-title">
+                      Import Canonical MCP Files
+                    </div>
+                    <div className="load-session__selection-summary">
+                      <span className="load-session__selection-count">
+                        {pendingMcpFiles.length} file{pendingMcpFiles.length !== 1 ? "s" : ""} selected
+                      </span>
+                      <button
+                        type="button"
+                        className="load-session__selection-change"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectionExpanded((v) => !v);
+                        }}
+                      >
+                        {selectionExpanded ? "Collapse" : "Change"}
+                      </button>
+                    </div>
+                    {selectionExpanded && (
+                      <div className="load-session__selection-list">
+                        <ul className="load-session__selection-ul">
+                          {pendingMcpFiles.map((file, i) => (
+                            <li key={`${file.name}-${i}`} className="load-session__selection-li">
+                              <span className="load-session__selection-filename" title={file.name}>
+                                {file.name}
+                              </span>
+                              <button
+                                type="button"
+                                className="load-session__selection-remove"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePendingMcpFile(i);
+                                }}
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                ×
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="load-session__selection-actions">
+                          <button
+                            type="button"
+                            className="load-session__browse-btn load-session__browse-btn--secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              mcpInputRef.current?.click();
+                            }}
+                          >
+                            Add more
+                          </button>
+                          <button
+                            type="button"
+                            className="load-session__browse-btn load-session__import-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              importPendingMcpFiles();
+                            }}
+                          >
+                            Import selected
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <p className="load-session__drop-formats">
+                      Supported formats: .json, .log, .mcp
+                    </p>
+                  </>
+                )}
                 {importStatus ? (
                   <p className="load-session__drop-status">{importStatus}</p>
                 ) : null}
@@ -570,7 +685,11 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         accept=".json,.jsonl,.log,application/json"
         className="file-input"
         onChange={(event) => {
-          void handleImportMcpFiles(event.target.files);
+          const list = event.target.files;
+          if (list && list.length > 0) {
+            const files = Array.from(list);
+            addPendingMcpFiles(files);
+          }
           event.target.value = "";
         }}
         aria-label="Choose canonical MCP session files"

@@ -622,7 +622,6 @@
     rgba(15, 23, 42, 0.9),
     rgba(8, 47, 73, 0.25)
   );
-  cursor: pointer;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -631,6 +630,10 @@
 .load-session__dropzone--primary:hover {
   border-color: rgba(56, 189, 248, 0.6);
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+}
+
+.load-session__dropzone--browse {
+  cursor: pointer;
 }
 
 .load-session__drop-icon--doc {
@@ -701,6 +704,109 @@
   font-size: 0.72rem;
   color: rgba(148, 163, 184, 0.85);
   text-align: center;
+}
+
+/* Summary + expandable selection list */
+.load-session__selection-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0 0;
+}
+
+.load-session__selection-count {
+  font-size: 0.9rem;
+  color: rgba(224, 242, 254, 0.95);
+}
+
+.load-session__selection-change {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #7dd3fc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.load-session__selection-change:hover {
+  color: #bae6fd;
+}
+
+.load-session__selection-list {
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+.load-session__selection-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.load-session__selection-li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+}
+
+.load-session__selection-li:last-child {
+  border-bottom: none;
+}
+
+.load-session__selection-filename {
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.load-session__selection-remove {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.4);
+  color: #e2e8f0;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.load-session__selection-remove:hover {
+  background: rgba(239, 68, 68, 0.5);
+}
+
+.load-session__selection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.load-session__import-btn {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.3), rgba(8, 145, 178, 0.4));
+  border-color: rgba(56, 189, 248, 0.6);
 }
 
 .load-session__drop-status {
