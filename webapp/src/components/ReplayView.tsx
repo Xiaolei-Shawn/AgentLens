@@ -2,8 +2,6 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { Session } from "../types/session";
 import { getRevisionIndexForEvent } from "../lib/fileEvolution";
 import { runAuditPostProcessing } from "../lib/auditPipeline";
-import { TimelineStrip } from "./TimelineStrip";
-import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
@@ -39,22 +37,42 @@ function formatPercent(value: number): string {
 export function ReplayView({ session, onBack }: ReplayViewProps) {
   const { normalized, reviewer } = useMemo(
     () => runAuditPostProcessing(session.events),
-    [session.events]
+    [session.events],
   );
 
   const criticalEvents = useMemo(() => {
-    const out: Array<{ index: number; severity: "high" | "medium"; reason: string }> = [];
+    const out: Array<{
+      index: number;
+      severity: "high" | "medium";
+      reason: string;
+    }> = [];
     for (let i = 0; i < session.events.length; i++) {
       const e = session.events[i];
-      if (e.kind === "decision") out.push({ index: i, severity: "medium", reason: "Decision point" });
-      if (e.kind === "session_end") out.push({ index: i, severity: "medium", reason: "Session outcome" });
+      if (e.kind === "decision")
+        out.push({ index: i, severity: "medium", reason: "Decision point" });
+      if (e.kind === "session_end")
+        out.push({ index: i, severity: "medium", reason: "Session outcome" });
       if (e.kind === "assumption" && e.payload.risk === "high") {
-        out.push({ index: i, severity: "high", reason: "High-risk assumption" });
+        out.push({
+          index: i,
+          severity: "high",
+          reason: "High-risk assumption",
+        });
       }
       if (e.kind === "verification") {
         const r = e.payload.result;
-        if (r === "fail") out.push({ index: i, severity: "high", reason: "Verification failed" });
-        else if (r === "unknown") out.push({ index: i, severity: "medium", reason: "Verification unknown" });
+        if (r === "fail")
+          out.push({
+            index: i,
+            severity: "high",
+            reason: "Verification failed",
+          });
+        else if (r === "unknown")
+          out.push({
+            index: i,
+            severity: "medium",
+            reason: "Verification unknown",
+          });
       }
       if (e.kind === "file_op") {
         const target =
@@ -67,7 +85,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           lower.includes("/migrations/") ||
           lower.endsWith("package.json")
         ) {
-          out.push({ index: i, severity: "high", reason: `High-impact file: ${target}` });
+          out.push({
+            index: i,
+            severity: "high",
+            reason: `High-impact file: ${target}`,
+          });
         }
       }
     }
@@ -75,28 +97,30 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     return out;
   }, [session.events]);
 
-  const criticalIndices = useMemo(
-    () => [...new Set(criticalEvents.map((e) => e.index))],
-    [criticalEvents]
-  );
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<"timeline" | "pivot">("timeline");
-  const [timelineTab, setTimelineTab] = useState<"deliverables" | "context" | "reviewer">("deliverables");
-  const [deliverableTab, setDeliverableTab] = useState<DeliverableTab>("what_changed");
-  const [selectedDeliverableId, setSelectedDeliverableId] = useState<string | null>(null);
+  type MainView = "deliverables" | "context" | "reviewer" | "pivot";
+  const [mainView, setMainView] = useState<MainView>("deliverables");
+  const [deliverableTab, setDeliverableTab] =
+    useState<DeliverableTab>("what_changed");
+  const [selectedDeliverableId, setSelectedDeliverableId] = useState<
+    string | null
+  >(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState<1 | 2>(1);
-  const [followupResult, setFollowupResult] = useState<FollowupGenerateResponse | null>(null);
+  const [speed] = useState<1 | 2>(1);
+  const [followupResult, setFollowupResult] =
+    useState<FollowupGenerateResponse | null>(null);
   const [followupStatus, setFollowupStatus] = useState<string>("");
-  const [tokenBreakdown, setTokenBreakdown] = useState<TokenBreakdownResponse | null>(null);
+  const [tokenBreakdown, setTokenBreakdown] =
+    useState<TokenBreakdownResponse | null>(null);
   const [tokenStatus, setTokenStatus] = useState<string>("");
-  const [selectedIntentCost, setSelectedIntentCost] = useState<string | null>(null);
+  const [selectedIntentCost, setSelectedIntentCost] = useState<string | null>(
+    null,
+  );
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const isWorkflowView = viewMode === "pivot";
+  const isWorkflowView = mainView === "pivot";
   const playbackSpeed = speed;
 
   const eventCount = session.events.length;
@@ -142,16 +166,18 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       setCurrentIndex(index);
       if (isPlaying) stopPlayback();
     },
-    [isPlaying, stopPlayback]
+    [isPlaying, stopPlayback],
   );
 
   const handleOpenFileEvolution = useCallback(
     (path: string, eventIndex: number) => {
       setSelectedFilePath(path);
-      setSelectedRevisionIndex(getRevisionIndexForEvent(session, path, eventIndex));
+      setSelectedRevisionIndex(
+        getRevisionIndexForEvent(session, path, eventIndex),
+      );
       setCurrentIndex(eventIndex);
     },
-    [session]
+    [session],
   );
 
   const handlePlay = useCallback(() => setIsPlaying(true), []);
@@ -169,7 +195,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       setFollowupResult(data);
       setFollowupStatus("Follow-up artifacts generated locally.");
     } catch (error) {
-      setFollowupStatus(error instanceof Error ? error.message : "Failed to generate follow-up artifacts.");
+      setFollowupStatus(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate follow-up artifacts.",
+      );
     }
   }, [session.events]);
 
@@ -190,13 +220,15 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       setTokenStatus("");
     } catch (error) {
       setTokenBreakdown(null);
-      setTokenStatus(error instanceof Error ? error.message : "Token breakdown unavailable.");
+      setTokenStatus(
+        error instanceof Error ? error.message : "Token breakdown unavailable.",
+      );
     }
   }, [session.events]);
 
   const deliverables = useMemo(
     () => deriveDeliverables(session, tokenBreakdown?.intent_breakdown ?? []),
-    [session, tokenBreakdown]
+    [session, tokenBreakdown],
   );
 
   useEffect(() => {
@@ -208,7 +240,9 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     const selectedStillExists = selectedDeliverableId
       ? deliverables.some((item) => item.id === selectedDeliverableId)
       : false;
-    const nextSelectedId = selectedStillExists ? selectedDeliverableId : deliverables[0].id;
+    const nextSelectedId = selectedStillExists
+      ? selectedDeliverableId
+      : deliverables[0].id;
     setSelectedDeliverableId(nextSelectedId);
     const deliverable = deliverables.find((item) => item.id === nextSelectedId);
     if (deliverable) {
@@ -218,12 +252,16 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   }, [deliverables, selectedDeliverableId]);
 
   const selectedDeliverable = useMemo(
-    () => deliverables.find((item) => item.id === selectedDeliverableId) ?? null,
-    [deliverables, selectedDeliverableId]
+    () =>
+      deliverables.find((item) => item.id === selectedDeliverableId) ?? null,
+    [deliverables, selectedDeliverableId],
   );
 
   const intentById = useMemo(() => {
-    const map = new Map<string, TokenBreakdownResponse["intent_breakdown"][number]>();
+    const map = new Map<
+      string,
+      TokenBreakdownResponse["intent_breakdown"][number]
+    >();
     for (const item of tokenBreakdown?.intent_breakdown ?? []) {
       map.set(item.intent_id, item);
     }
@@ -239,7 +277,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     (deliverable: DeliverableItem) => {
       const contributions = deliverable.intent_contributions;
       if (contributions.length === 0) {
-        return <p className="replay-placeholder-note">No intent links were detected for this deliverable.</p>;
+        return (
+          <p className="replay-placeholder-note">
+            No intent links were detected for this deliverable.
+          </p>
+        );
       }
       return (
         <div className="deliverable-intents">
@@ -247,7 +289,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             const intent = intentById.get(item.intent_id);
             const roleLabel = index === 0 ? "Primary intent" : "Related intent";
             return (
-              <article className="deliverable-intent-card" key={`${deliverable.id}-${item.intent_id}`}>
+              <article
+                className="deliverable-intent-card"
+                key={`${deliverable.id}-${item.intent_id}`}
+              >
                 <header>
                   <h4>{intent?.intent_title ?? item.intent_id}</h4>
                   <span>{roleLabel}</span>
@@ -257,8 +302,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                 </p>
                 {intent ? (
                   <p>
-                    Tokens {intent.total_tokens.toLocaleString()} · context {intent.context_tokens.toLocaleString()} ·
-                    output {intent.output_tokens.toLocaleString()} · unknown {intent.unknown_tokens.toLocaleString()}
+                    Tokens {intent.total_tokens.toLocaleString()} · context{" "}
+                    {intent.context_tokens.toLocaleString()} · output{" "}
+                    {intent.output_tokens.toLocaleString()} · unknown{" "}
+                    {intent.unknown_tokens.toLocaleString()}
                   </p>
                 ) : (
                   <p>No token telemetry linked for this intent.</p>
@@ -269,7 +316,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </div>
       );
     },
-    [intentById]
+    [intentById],
   );
 
   const renderCost = useCallback(
@@ -289,7 +336,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           context,
           output,
           unknown,
-          cost: intent?.estimated_cost_usd != null ? Number((intent.estimated_cost_usd * ratio).toFixed(6)) : null,
+          cost:
+            intent?.estimated_cost_usd != null
+              ? Number((intent.estimated_cost_usd * ratio).toFixed(6))
+              : null,
         };
       });
       return (
@@ -320,9 +370,18 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     <td>
                       {row.context.toLocaleString()}
                       <div className="token-bar">
-                        <span className="token-bar__context" style={{ width: `${contextPct}%` }} />
-                        <span className="token-bar__output" style={{ width: `${outputPct}%` }} />
-                        <span className="token-bar__unknown" style={{ width: `${unknownPct}%` }} />
+                        <span
+                          className="token-bar__context"
+                          style={{ width: `${contextPct}%` }}
+                        />
+                        <span
+                          className="token-bar__output"
+                          style={{ width: `${outputPct}%` }}
+                        />
+                        <span
+                          className="token-bar__unknown"
+                          style={{ width: `${unknownPct}%` }}
+                        />
                       </div>
                     </td>
                     <td>{row.output.toLocaleString()}</td>
@@ -336,11 +395,13 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         </div>
       );
     },
-    [intentById]
+    [intentById],
   );
 
   return (
-    <div className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}>
+    <div
+      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}
+    >
       <header className="replay-header">
         <button
           type="button"
@@ -350,7 +411,9 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         >
           ← Back
         </button>
-        <h1 className={`replay-title ${isWorkflowView ? "replay-title--workflow" : ""}`}>
+        <h1
+          className={`replay-title ${isWorkflowView ? "replay-title--workflow" : ""}`}
+        >
           {isWorkflowView ? (
             <>
               <span className="workflow-logo" aria-hidden>
@@ -365,26 +428,88 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         <p className="replay-meta">
           {session.id} · {eventCount} events
         </p>
-        <div className="replay-view-toggle replay-view-toggle--all">
+      </header>
+      <section
+        className="replay-controls"
+        aria-label="Replay controls and view switcher"
+      >
+        <nav className="replay-nav" aria-label="View switcher">
           <button
             type="button"
-            className={viewMode === "timeline" ? "active" : ""}
-            onClick={() => setViewMode("timeline")}
+            className={mainView === "deliverables" ? "active" : ""}
+            onClick={() => setMainView("deliverables")}
           >
-            Session
+            Deliverables
           </button>
           <button
             type="button"
-            className={`replay-view-toggle__pivot ${viewMode === "pivot" ? "active" : ""}`}
-            onClick={() => setViewMode("pivot")}
+            className={mainView === "context" ? "active" : ""}
+            onClick={() => setMainView("context")}
+          >
+            Context
+          </button>
+          <button
+            type="button"
+            className={mainView === "reviewer" ? "active" : ""}
+            onClick={() => setMainView("reviewer")}
+          >
+            Reviewer
+          </button>
+          <button
+            type="button"
+            className={`replay-nav__pivot ${mainView === "pivot" ? "active" : ""}`}
+            onClick={() => setMainView("pivot")}
             title="Pivot: immersive mission flow"
           >
-            Pivot ★
+            Pivot
           </button>
+        </nav>
+        <div className="replay-toolbar" role="group" aria-label="Playback">
+          <button
+            type="button"
+            className="replay-toolbar__play"
+            onClick={isPlaying ? handlePause : handlePlay}
+            disabled={eventCount === 0}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            <span aria-hidden>{isPlaying ? "⏸" : "▶"}</span>
+          </button>
+          <div
+            className="replay-toolbar__progress"
+            role="progressbar"
+            aria-valuenow={currentIndex + 1}
+            aria-valuemin={1}
+            aria-valuemax={eventCount || 1}
+            aria-label="Event progress"
+            onClick={(e) => {
+              if (eventCount <= 0) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const idx = Math.min(
+                eventCount - 1,
+                Math.floor((x / rect.width) * eventCount),
+              );
+              handleSeek(Math.max(0, idx));
+            }}
+          >
+            <div
+              className="replay-toolbar__progress-fill"
+              style={{
+                width: `${
+                  eventCount <= 1
+                    ? 100
+                    : (100 * (currentIndex + 1)) / eventCount
+                }%`,
+              }}
+            />
+          </div>
+          <span className="replay-toolbar__label" aria-hidden>
+            {eventCount ? `${currentIndex + 1} / ${eventCount}` : "—"}
+          </span>
         </div>
-      </header>
+      </section>
       <div className="replay-layout">
-        {viewMode === "timeline" && timelineTab === "deliverables" && (
+        {mainView === "deliverables" && (
           <aside className="replay-sidebar">
             <DeliverablesList
               items={deliverables}
@@ -394,32 +519,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </aside>
         )}
         <main className="replay-main">
-          {viewMode === "timeline" && (
-            <div className="replay-subtabs">
-              <button
-                type="button"
-                className={timelineTab === "deliverables" ? "active" : ""}
-                onClick={() => setTimelineTab("deliverables")}
-              >
-                Deliverables
-              </button>
-              <button
-                type="button"
-                className={timelineTab === "context" ? "active" : ""}
-                onClick={() => setTimelineTab("context")}
-              >
-                Context
-              </button>
-              <button
-                type="button"
-                className={timelineTab === "reviewer" ? "active" : ""}
-                onClick={() => setTimelineTab("reviewer")}
-              >
-                Reviewer
-              </button>
-            </div>
-          )}
-          {viewMode === "pivot" && (
+          {mainView === "pivot" && (
             <FlowView
               session={session}
               currentIndex={currentIndex}
@@ -430,11 +530,14 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               allowPerspective={true}
             />
           )}
-          {viewMode === "timeline" && (
+          {mainView !== "pivot" && (
             <>
-              {timelineTab === "reviewer" ? (
+              {mainView === "reviewer" ? (
                 <>
-                  <ReviewerHighlights normalized={normalized} reviewer={reviewer} />
+                  <ReviewerHighlights
+                    normalized={normalized}
+                    reviewer={reviewer}
+                  />
                   <ReviewerFocusPanel
                     session={session}
                     normalized={normalized}
@@ -446,16 +549,23 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   <section className="reviewer-focus">
                     <header className="reviewer-focus__alert">
                       <h2>Intent Cost</h2>
-                      <p>Token consumption per intent, split into context-building vs output-producing usage.</p>
+                      <p>
+                        Token consumption per intent, split into
+                        context-building vs output-producing usage.
+                      </p>
                     </header>
                     {tokenStatus ? <p>{tokenStatus}</p> : null}
                     {tokenBreakdown ? (
                       <>
                         <div className="reviewer-focus__card reviewer-focus__card--wide">
                           <p>
-                            Total {tokenBreakdown.totals.total_tokens.toLocaleString()} tokens · context{" "}
-                            {tokenBreakdown.totals.context_tokens.toLocaleString()} · output{" "}
-                            {tokenBreakdown.totals.output_tokens.toLocaleString()} · unknown{" "}
+                            Total{" "}
+                            {tokenBreakdown.totals.total_tokens.toLocaleString()}{" "}
+                            tokens · context{" "}
+                            {tokenBreakdown.totals.context_tokens.toLocaleString()}{" "}
+                            · output{" "}
+                            {tokenBreakdown.totals.output_tokens.toLocaleString()}{" "}
+                            · unknown{" "}
                             {tokenBreakdown.totals.unknown_tokens.toLocaleString()}
                           </p>
                         </div>
@@ -474,28 +584,58 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                             <tbody>
                               {tokenBreakdown.intent_breakdown.map((row) => {
                                 const total = Math.max(1, row.total_tokens);
-                                const contextPct = Math.round((row.context_tokens / total) * 100);
-                                const outputPct = Math.round((row.output_tokens / total) * 100);
-                                const unknownPct = Math.max(0, 100 - contextPct - outputPct);
+                                const contextPct = Math.round(
+                                  (row.context_tokens / total) * 100,
+                                );
+                                const outputPct = Math.round(
+                                  (row.output_tokens / total) * 100,
+                                );
+                                const unknownPct = Math.max(
+                                  0,
+                                  100 - contextPct - outputPct,
+                                );
                                 return (
                                   <tr
                                     key={row.intent_id}
-                                    className={selectedIntentCost === row.intent_id ? "is-selected" : ""}
-                                    onClick={() => setSelectedIntentCost(row.intent_id)}
+                                    className={
+                                      selectedIntentCost === row.intent_id
+                                        ? "is-selected"
+                                        : ""
+                                    }
+                                    onClick={() =>
+                                      setSelectedIntentCost(row.intent_id)
+                                    }
                                   >
                                     <td>{row.intent_title}</td>
                                     <td>{row.total_tokens.toLocaleString()}</td>
                                     <td>
                                       {row.context_tokens.toLocaleString()}
                                       <div className="token-bar">
-                                        <span className="token-bar__context" style={{ width: `${contextPct}%` }} />
-                                        <span className="token-bar__output" style={{ width: `${outputPct}%` }} />
-                                        <span className="token-bar__unknown" style={{ width: `${unknownPct}%` }} />
+                                        <span
+                                          className="token-bar__context"
+                                          style={{ width: `${contextPct}%` }}
+                                        />
+                                        <span
+                                          className="token-bar__output"
+                                          style={{ width: `${outputPct}%` }}
+                                        />
+                                        <span
+                                          className="token-bar__unknown"
+                                          style={{ width: `${unknownPct}%` }}
+                                        />
                                       </div>
                                     </td>
-                                    <td>{row.output_tokens.toLocaleString()}</td>
-                                    <td>{row.unknown_tokens.toLocaleString()}</td>
-                                    <td>{row.estimated_cost_usd != null ? `$${row.estimated_cost_usd}` : "-"}</td>
+                                    <td>
+                                      {row.output_tokens.toLocaleString()}
+                                    </td>
+                                    <td>
+                                      {row.unknown_tokens.toLocaleString()}
+                                    </td>
+                                    <td>
+                                      {row.estimated_cost_usd != null
+                                        ? `$${row.estimated_cost_usd}`
+                                        : "-"}
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -508,59 +648,112 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   <section className="reviewer-focus">
                     <header className="reviewer-focus__alert">
                       <h2>User-Triggered Workflow Standardization</h2>
-                      <p>Generate a rule + skill draft only when you want to standardize similar future tasks.</p>
+                      <p>
+                        Generate a rule + skill draft only when you want to
+                        standardize similar future tasks.
+                      </p>
                     </header>
-                    <button type="button" className="browse-btn" onClick={() => void handleGenerateFollowup()}>
+                    <button
+                      type="button"
+                      className="browse-btn"
+                      onClick={() => void handleGenerateFollowup()}
+                    >
                       Generate Follow-up Rule/Skill
                     </button>
                     {followupStatus ? <p>{followupStatus}</p> : null}
                     {followupResult ? (
                       <>
                         <p>
-                          Intents: {followupResult.summary.intent_count} · high-risk intents:{" "}
-                          {followupResult.summary.high_risk_intents} · high waste intents:{" "}
+                          Intents: {followupResult.summary.intent_count} ·
+                          high-risk intents:{" "}
+                          {followupResult.summary.high_risk_intents} · high
+                          waste intents:{" "}
                           {followupResult.summary.high_efficiency_waste_intents}
                         </p>
                         <div className="reviewer-focus__grid reviewer-focus__grid--2">
                           {followupResult.artifacts.map((artifact) => (
-                            <article className="reviewer-focus__card" key={artifact.intent_id}>
+                            <article
+                              className="reviewer-focus__card"
+                              key={artifact.intent_id}
+                            >
                               <h3>{artifact.intent_title}</h3>
                               <p>
-                                template <code>{artifact.rule_template_id}</code> · confidence {artifact.confidence}
+                                template{" "}
+                                <code>{artifact.rule_template_id}</code> ·
+                                confidence {artifact.confidence}
                               </p>
                               <p>
-                                risk {artifact.features.risk_score} · waste {artifact.features.efficiency_waste_score}
-                                {" "}· stability {artifact.features.stability_score}
+                                risk {artifact.features.risk_score} · waste{" "}
+                                {artifact.features.efficiency_waste_score} ·
+                                stability {artifact.features.stability_score}
                               </p>
                               <ul>
-                                {artifact.value_claims.risk_mitigation.map((item, index) => (
-                                  <li key={`risk-${artifact.intent_id}-${index}`}>{item}</li>
-                                ))}
-                                {artifact.value_claims.efficiency_improvement.map((item, index) => (
-                                  <li key={`eff-${artifact.intent_id}-${index}`}>{item}</li>
-                                ))}
-                                {artifact.value_claims.quality_standardization.map((item, index) => (
-                                  <li key={`qual-${artifact.intent_id}-${index}`}>{item}</li>
-                                ))}
+                                {artifact.value_claims.risk_mitigation.map(
+                                  (item, index) => (
+                                    <li
+                                      key={`risk-${artifact.intent_id}-${index}`}
+                                    >
+                                      {item}
+                                    </li>
+                                  ),
+                                )}
+                                {artifact.value_claims.efficiency_improvement.map(
+                                  (item, index) => (
+                                    <li
+                                      key={`eff-${artifact.intent_id}-${index}`}
+                                    >
+                                      {item}
+                                    </li>
+                                  ),
+                                )}
+                                {artifact.value_claims.quality_standardization.map(
+                                  (item, index) => (
+                                    <li
+                                      key={`qual-${artifact.intent_id}-${index}`}
+                                    >
+                                      {item}
+                                    </li>
+                                  ),
+                                )}
                               </ul>
                               <details>
-                                <summary>Evidence refs ({artifact.evidence_refs.length})</summary>
+                                <summary>
+                                  Evidence refs ({artifact.evidence_refs.length}
+                                  )
+                                </summary>
                                 <ul>
-                                  {artifact.evidence_refs.slice(0, 10).map((item) => (
-                                    <li key={`${artifact.intent_id}-${item.event_id}`}>
-                                      {item.event_id} · {item.reason}
-                                    </li>
-                                  ))}
+                                  {artifact.evidence_refs
+                                    .slice(0, 10)
+                                    .map((item) => (
+                                      <li
+                                        key={`${artifact.intent_id}-${item.event_id}`}
+                                      >
+                                        {item.event_id} · {item.reason}
+                                      </li>
+                                    ))}
                                 </ul>
                               </details>
                               <div className="reviewer-focus__actions">
                                 <button
                                   type="button"
-                                  onClick={() => void copyText(JSON.stringify(artifact.rule_spec, null, 2))}
+                                  onClick={() =>
+                                    void copyText(
+                                      JSON.stringify(
+                                        artifact.rule_spec,
+                                        null,
+                                        2,
+                                      ),
+                                    )
+                                  }
                                 >
                                   Copy Rule JSON
                                 </button>
-                                <button type="button" onClick={() => void copyText(artifact.skill_draft)}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void copyText(artifact.skill_draft)
+                                  }
+                                >
                                   Copy SKILL.md
                                 </button>
                               </div>
@@ -571,7 +764,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     ) : null}
                   </section>
                 </>
-              ) : timelineTab === "context" ? (
+              ) : mainView === "context" ? (
                 <ContextPathView
                   session={session}
                   currentIndex={currentIndex}
@@ -586,10 +779,18 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     </header>
                     <div className="deliverable-summary__meta">
                       <span>Status: {selectedDeliverable.status}</span>
-                      <span className={`risk risk-${selectedDeliverable.risk}`}>Risk: {selectedDeliverable.risk}</span>
-                      <span>Est. tokens: {selectedDeliverable.token_total.toLocaleString()}</span>
+                      <span className={`risk risk-${selectedDeliverable.risk}`}>
+                        Risk: {selectedDeliverable.risk}
+                      </span>
                       <span>
-                        Est. cost: {selectedDeliverable.estimated_cost_usd != null ? `$${selectedDeliverable.estimated_cost_usd}` : "-"}
+                        Est. tokens:{" "}
+                        {selectedDeliverable.token_total.toLocaleString()}
+                      </span>
+                      <span>
+                        Est. cost:{" "}
+                        {selectedDeliverable.estimated_cost_usd != null
+                          ? `$${selectedDeliverable.estimated_cost_usd}`
+                          : "-"}
                       </span>
                     </div>
                   </section>
@@ -597,14 +798,18 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   <div className="deliverable-tabs">
                     <button
                       type="button"
-                      className={deliverableTab === "what_changed" ? "active" : ""}
+                      className={
+                        deliverableTab === "what_changed" ? "active" : ""
+                      }
                       onClick={() => setDeliverableTab("what_changed")}
                     >
                       What changed
                     </button>
                     <button
                       type="button"
-                      className={deliverableTab === "why_changed" ? "active" : ""}
+                      className={
+                        deliverableTab === "why_changed" ? "active" : ""
+                      }
                       onClick={() => setDeliverableTab("why_changed")}
                     >
                       Why changed
@@ -620,18 +825,27 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
                   {deliverableTab === "what_changed" ? (
                     <section className="deliverable-pane">
-                      <p className="deliverable-pane__hint">Clean summary first, detail on demand.</p>
+                      <p className="deliverable-pane__hint">
+                        Clean summary first, detail on demand.
+                      </p>
                       {selectedDeliverable.event_indices.length > 0 ? (
                         <div className="deliverable-event-links">
-                          {selectedDeliverable.event_indices.slice(-8).map((index) => (
-                            <button
-                              type="button"
-                              key={`${selectedDeliverable.id}-${index}`}
-                              onClick={() => handleOpenFileEvolution(selectedDeliverable.path, index)}
-                            >
-                              Jump to event #{index + 1}
-                            </button>
-                          ))}
+                          {selectedDeliverable.event_indices
+                            .slice(-8)
+                            .map((index) => (
+                              <button
+                                type="button"
+                                key={`${selectedDeliverable.id}-${index}`}
+                                onClick={() =>
+                                  handleOpenFileEvolution(
+                                    selectedDeliverable.path,
+                                    index,
+                                  )
+                                }
+                              >
+                                Jump to event #{index + 1}
+                              </button>
+                            ))}
                         </div>
                       ) : null}
                       {selectedFilePath ? (
@@ -646,42 +860,29 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   ) : null}
 
                   {deliverableTab === "why_changed" ? (
-                    <section className="deliverable-pane">{renderWhyChanged(selectedDeliverable)}</section>
+                    <section className="deliverable-pane">
+                      {renderWhyChanged(selectedDeliverable)}
+                    </section>
                   ) : null}
 
                   {deliverableTab === "cost" ? (
-                    <section className="deliverable-pane">{renderCost(selectedDeliverable)}</section>
+                    <section className="deliverable-pane">
+                      {renderCost(selectedDeliverable)}
+                    </section>
                   ) : null}
                 </>
               ) : (
                 <div className="replay-placeholder">
-                  <p>Select a deliverable to inspect what changed, why it changed, and associated intent cost.</p>
+                  <p>
+                    Select a deliverable to inspect what changed, why it
+                    changed, and associated intent cost.
+                  </p>
                 </div>
               )}
             </>
           )}
         </main>
       </div>
-      <footer className="replay-footer">
-        {viewMode === "timeline" ? (
-          <>
-            <TimelineStrip
-              eventCount={eventCount}
-              currentIndex={currentIndex}
-              onSeek={handleSeek}
-              criticalIndices={criticalIndices}
-            />
-            <PlaybackControls
-              isPlaying={isPlaying}
-              speed={speed}
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onSpeedChange={setSpeed}
-              disabled={eventCount === 0}
-            />
-          </>
-        ) : null}
-      </footer>
     </div>
   );
 }

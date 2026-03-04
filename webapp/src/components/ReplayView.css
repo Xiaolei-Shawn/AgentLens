@@ -15,6 +15,19 @@
   flex-wrap: wrap;
 }
 
+.replay-controls {
+  flex-shrink: 0;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.replay-controls .replay-toolbar {
+  margin-left: auto;
+}
+
 .back-btn {
   padding: 0.4rem 0.6rem;
   font-size: 0.9rem;
@@ -32,25 +45,24 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
-.replay-view-toggle button {
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.replay-view-toggle {
+/* Top-level view nav:  Deliverables, Context, Reviewer, Pivot (all in one place) */
+.replay-nav {
   display: flex;
-  gap: 0.3rem;
-  margin-left: auto;
+  gap: 0.25rem;
   padding: 0.24rem;
   border: 1px solid rgba(56, 189, 248, 0.28);
   border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(2, 6, 23, 0.9));
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.94),
+    rgba(2, 6, 23, 0.9)
+  );
   box-shadow:
     inset 0 0 0 1px rgba(2, 132, 199, 0.14),
     0 8px 22px rgba(2, 6, 23, 0.42);
 }
 
-.replay-view-toggle button {
+.replay-nav button {
   padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
   border: 1px solid rgba(13, 166, 242, 0.2);
@@ -62,13 +74,17 @@
   letter-spacing: 0.02em;
 }
 
-.replay-view-toggle button:hover {
+.replay-nav button:hover {
   background: rgba(30, 41, 59, 0.96);
   border-color: rgba(56, 189, 248, 0.4);
 }
 
-.replay-view-toggle button.active {
-  background: linear-gradient(180deg, rgba(14, 116, 144, 0.58), rgba(12, 74, 110, 0.64));
+.replay-nav button.active {
+  background: linear-gradient(
+    180deg,
+    rgba(14, 116, 144, 0.58),
+    rgba(12, 74, 110, 0.64)
+  );
   border-color: rgba(34, 211, 238, 0.82);
   color: #fff;
   box-shadow:
@@ -76,27 +92,98 @@
     0 0 14px rgba(34, 211, 238, 0.36);
 }
 
-.replay-view-toggle__pivot {
+.replay-nav__pivot {
   border-color: rgba(16, 185, 129, 0.42) !important;
-  background:
-    linear-gradient(180deg, rgba(6, 78, 59, 0.62), rgba(15, 23, 42, 0.84)) !important;
+  background: linear-gradient(
+    180deg,
+    rgba(6, 78, 59, 0.62),
+    rgba(15, 23, 42, 0.84)
+  ) !important;
   color: #ccfbf1 !important;
 }
 
-.replay-view-toggle__pivot:hover {
+.replay-nav__pivot:hover {
   border-color: rgba(45, 212, 191, 0.74) !important;
   box-shadow: 0 0 12px rgba(20, 184, 166, 0.35);
 }
 
-.replay-view-toggle__pivot.active {
-  background:
-    linear-gradient(180deg, rgba(20, 184, 166, 0.45), rgba(15, 23, 42, 0.85)) !important;
+.replay-nav__pivot.active {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 184, 166, 0.45),
+    rgba(15, 23, 42, 0.85)
+  ) !important;
   border-color: rgba(94, 234, 212, 0.95) !important;
   color: #ecfeff !important;
   box-shadow:
     inset 0 0 0 1px rgba(153, 246, 228, 0.35),
     0 0 0 1px rgba(45, 212, 191, 0.4),
     0 0 20px rgba(20, 184, 166, 0.5);
+}
+
+/* Simplified replay toolbar (same idea as Pivot/FlowView toolbar) */
+.replay-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  min-width: 180px;
+}
+
+.replay-toolbar__play {
+  flex-shrink: 0;
+  width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #7dd3fc;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.replay-toolbar__play:hover:not(:disabled) {
+  background: rgba(30, 58, 95, 0.9);
+  border-color: rgba(56, 189, 248, 0.6);
+}
+
+.replay-toolbar__play:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.replay-toolbar__progress {
+  flex: 1;
+  min-width: 60px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.8);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.replay-toolbar__progress-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.5),
+    rgba(34, 211, 238, 0.7)
+  );
+  border-radius: 4px;
+  transition: width 0.15s ease;
+}
+
+.replay-toolbar__label {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.95);
+  min-width: 2.5rem;
 }
 
 .replay-layout {
