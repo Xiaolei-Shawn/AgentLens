@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { extname, join, normalize, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CanonicalEvent } from "./event-envelope.js";
+import { EVENT_SCHEMA_VERSION } from "./event-envelope.js";
 import {
   getDashboardHost,
   getDashboardPort,
@@ -221,6 +222,73 @@ function summarizeSessionPayload(payload: SessionPayload): Omit<SessionFileSumma
     goal: payload.goal,
     outcome: deriveOutcome(payload.events),
     event_count: payload.events.length,
+  };
+}
+
+/** Merge multiple session payloads into one: combined events sorted by ts, single session_id, re-sequenced. */
+function mergeSessionPayloads(payloads: SessionPayload[]): SessionPayload {
+  if (payloads.length === 0) throw new Error("No payloads to merge.");
+  if (payloads.length === 1) return payloads[0];
+
+  const mergedSessionId = `merged_${Date.now()}_${randomUUID().slice(0, 8)}`;
+  const expectedTotal = payloads.reduce((sum, p) => sum + p.events.length, 0);
+  const allEvents: CanonicalEvent[] = [];
+
+  for (const payload of payloads) {
+    for (const e of payload.events) {
+      allEvents.push({
+        id: e.id,
+        session_id: mergedSessionId,
+        seq: e.seq,
+        ts: e.ts,
+        kind: e.kind,
+        actor: { ...e.actor },
+        scope: e.scope ? { ...e.scope } : undefined,
+        payload: typeof e.payload === "object" && e.payload !== null ? { ...e.payload } : e.payload,
+        derived: e.derived,
+        confidence: e.confidence,
+        visibility: e.visibility,
+        schema_version: e.schema_version ?? EVENT_SCHEMA_VERSION,
+      });
+    }
+  }
+
+  if (allEvents.length !== expectedTotal) {
+    throw new Error(
+      `Merge event count mismatch: collected ${allEvents.length}, expected ${expectedTotal} from ${payloads.length} payload(s).`,
+    );
+  }
+
+  allEvents.sort((a, b) => {
+    const tsCmp = a.ts.localeCompare(b.ts);
+    if (tsCmp !== 0) return tsCmp;
+    return (a.seq ?? 0) - (b.seq ?? 0);
+  });
+
+  let seq = 0;
+  const mergedEvents: CanonicalEvent[] = allEvents.map((e) => {
+    seq += 1;
+    return {
+      ...e,
+      id: `${mergedSessionId}:${seq}:${randomUUID().slice(0, 8)}`,
+      seq,
+      schema_version: e.schema_version ?? EVENT_SCHEMA_VERSION,
+    };
+  });
+
+  const first = payloads[0];
+  const last = payloads[payloads.length - 1];
+  const firstStart = mergedEvents.find((e) => e.kind === "session_start");
+  const lastEnd = [...mergedEvents].reverse().find((e) => e.kind === "session_end");
+  const startPayload = (firstStart?.payload ?? {}) as Record<string, unknown>;
+
+  return {
+    session_id: mergedSessionId,
+    goal: typeof startPayload.goal === "string" ? startPayload.goal : first.goal ?? "Merged session",
+    user_prompt: first.user_prompt,
+    started_at: firstStart?.ts ?? first.started_at ?? mergedEvents[0]?.ts,
+    ended_at: lastEnd?.ts ?? last.ended_at,
+    events: mergedEvents,
   };
 }
 
@@ -556,7 +624,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return true;
       }
 
-      const accepted: SessionFileSummary[] = [];
+      const acceptedPayloads: SessionPayload[] = [];
       const rejected_files: Array<{ name: string; error: string }> = [];
 
       for (const item of filesRaw) {
@@ -568,13 +636,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         }
         try {
           const payload = parseSessionContent(file.content);
-          writeCanonicalSession(payload);
-          const summary = summarizeSessionPayload(payload);
-          accepted.push({
-            ...summary,
-            size_bytes: Buffer.byteLength(file.content, "utf-8"),
-            updated_at: new Date().toISOString(),
-          });
+          acceptedPayloads.push(payload);
         } catch (error) {
           rejected_files.push({
             name,
@@ -586,7 +648,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         }
       }
 
-      if (accepted.length === 0) {
+      if (acceptedPayloads.length === 0) {
         json(res, 400, {
           error: "No canonical MCP session logs were accepted.",
           rejected_files,
@@ -594,19 +656,43 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return true;
       }
 
+      const mergedPayload =
+        acceptedPayloads.length === 1
+          ? acceptedPayloads[0]
+          : mergeSessionPayloads(acceptedPayloads);
+
+      writeCanonicalSession(mergedPayload);
+      const summary = summarizeSessionPayload(mergedPayload);
+      const accepted: SessionFileSummary[] = [
+        {
+          ...summary,
+          size_bytes: mergedPayload.events.reduce(
+            (acc, e) => acc + Buffer.byteLength(JSON.stringify(e), "utf-8"),
+            0,
+          ),
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
       const import_set_id = `iset_${Date.now()}_${randomUUID().slice(0, 8)}`;
       importSets.set(import_set_id, {
         import_set_id,
         created_at: new Date().toISOString(),
-        session_ids: [...new Set(accepted.map((item) => item.session_id))],
+        session_ids: [mergedPayload.session_id],
       });
 
+      const multipleRejected = filesRaw.length > 1 && rejected_files.length > 0;
       json(res, 200, {
         import_set_id,
         sessions: accepted,
         rejected_files,
-        guidance:
-          "Import only relevant or consecutive sessions from the same thread/conversation to avoid noisy insights.",
+        accepted_file_count: acceptedPayloads.length,
+        total_event_count: mergedPayload.events.length,
+        guidance: multipleRejected
+          ? `${acceptedPayloads.length} of ${filesRaw.length} files were valid. Fix or remove rejected files to merge all session logs.`
+          : acceptedPayloads.length > 1
+            ? "Multiple session logs were merged into one. Raw logs will merge into this combined session."
+            : "Import only relevant or consecutive sessions from the same thread/conversation to avoid noisy insights.",
       });
     } catch (error) {
       json(res, 400, { error: error instanceof Error ? error.message : String(error) });

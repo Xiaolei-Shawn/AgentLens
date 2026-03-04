@@ -24,6 +24,8 @@ interface McpImportResponse {
   import_set_id: string;
   sessions?: LocalSessionSummary[];
   rejected_files?: Array<{ name: string; error: string }>;
+  accepted_file_count?: number;
+  total_event_count?: number;
   guidance?: string;
 }
 
@@ -211,12 +213,19 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         setImportedSessions(sessions);
         const defaultSessionRef = sessions[0] ? getSessionRef(sessions[0]) : "";
         setRawTargetSessionId(defaultSessionRef);
-        const rejected = Array.isArray(data.rejected_files)
-          ? data.rejected_files.length
-          : 0;
-        setImportStatus(
-          `Imported ${sessions.length} MCP session(s).${rejected > 0 ? ` Rejected ${rejected} invalid file(s).` : ""}`,
-        );
+        const rejectedList = Array.isArray(data.rejected_files) ? data.rejected_files : [];
+        const acceptedCount = typeof data.accepted_file_count === "number" ? data.accepted_file_count : sessions.length;
+        const eventCount = typeof data.total_event_count === "number" ? data.total_event_count : sessions[0]?.event_count;
+        const mergedMessage =
+          acceptedCount > 1
+            ? `${acceptedCount} session logs merged into 1 session`
+            : "1 session log imported";
+        const eventMessage = typeof eventCount === "number" ? ` (${eventCount} events)` : "";
+        const rejectedMessage =
+          rejectedList.length > 0
+            ? `. ${rejectedList.length} file(s) rejected: ${rejectedList.map((r) => `${r.name}: ${r.error}`).join("; ")}`
+            : "";
+        setImportStatus(`${mergedMessage}${eventMessage}${rejectedMessage}`);
         setPendingMcpFiles([]);
         setSelectionExpanded(false);
         await fetchLocalSessions();
@@ -315,7 +324,6 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           `Merged raw log. Inserted ${data.inserted ?? 0} event(s), skipped ${data.skipped_duplicates ?? 0} duplicate(s).`,
         );
         await fetchLocalSessions();
-        await openSessionById(rawTargetSessionId);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to merge raw log.";
@@ -327,7 +335,6 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
       fetchLocalSessions,
       importSetId,
       onError,
-      openSessionById,
       rawTargetSessionId,
     ],
   );
@@ -618,23 +625,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                 </button>
               </div>
               {importedSessions.length > 0 ? (
-                <select
-                  className="load-session__target-select"
-                  value={rawTargetSessionId}
-                  onChange={(event) =>
-                    setRawTargetSessionId(event.target.value)
-                  }
-                  aria-label="Select imported target session for merge and launch"
-                >
-                  {importedSessions.map((session) => {
-                    const ref = getSessionRef(session);
-                    return (
-                      <option key={ref} value={ref}>
-                        {session.goal ?? session.session_id ?? session.key}
-                      </option>
-                    );
-                  })}
-                </select>
+                <p className="load-session__raw-target-name" aria-live="polite">
+                  Session: {importedSessions[0].goal ?? importedSessions[0].session_id ?? importedSessions[0].key}
+                </p>
               ) : null}
               {rawMergeStatus ? (
                 <p className="load-session__drop-status">{rawMergeStatus}</p>

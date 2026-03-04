@@ -820,6 +820,13 @@
   border-color: rgba(56, 189, 248, 0.6);
 }
 
+.load-session__raw-target-name {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.9);
+  text-align: center;
+}
+
 .load-session__drop-status {
   margin: 0.35rem 0 0;
   font-size: 0.8rem;
