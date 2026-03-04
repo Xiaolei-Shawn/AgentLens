@@ -965,7 +965,10 @@ export function FlowView({
   ]);
 
   return (
-    <div className="flow-view">
+    <div
+      className={`flow-view ${rideCamera ? "flow-view--ride" : ""}`}
+      data-ride={rideCamera ? "true" : undefined}
+    >
       <div className="flow-view__main">
         <div className="flow-view__canvas-wrap">
           <div
