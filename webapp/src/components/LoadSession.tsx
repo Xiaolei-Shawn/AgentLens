@@ -315,13 +315,18 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           error?: string;
           inserted?: number;
           skipped_duplicates?: number;
+          filtered_out_by_time_window?: number;
         };
         if (!response.ok)
           throw new Error(
             data.error ?? `Raw merge failed (${response.status})`,
           );
+        const filtered =
+          data.filtered_out_by_time_window != null && data.filtered_out_by_time_window > 0
+            ? `, ${data.filtered_out_by_time_window} outside session time window`
+            : "";
         setRawMergeStatus(
-          `Merged raw log. Inserted ${data.inserted ?? 0} event(s), skipped ${data.skipped_duplicates ?? 0} duplicate(s).`,
+          `Merged raw log. Inserted ${data.inserted ?? 0} event(s), skipped ${data.skipped_duplicates ?? 0} duplicate(s)${filtered}.`,
         );
         await fetchLocalSessions();
       } catch (err) {

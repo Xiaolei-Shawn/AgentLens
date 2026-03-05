@@ -1,7 +1,7 @@
 import type { AdaptedEvent, AdaptedSession, RawAdapter } from "./types.js";
 
 interface CodexLine {
-  timestamp?: string;
+  timestamp?: string | number;
   type?: string;
   payload?: Record<string, unknown>;
 }
@@ -13,9 +13,21 @@ function toObject(value: unknown): Record<string, unknown> {
 }
 
 function toIso(ts: unknown, fallback: string): string {
+  if (ts == null) return fallback;
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    const parsed = new Date(ts);
+    return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+  }
   if (typeof ts !== "string" || ts.trim() === "") return fallback;
   const parsed = new Date(ts);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+}
+
+/** Prefer top-level timestamp, then payload.timestamp / payload.created_at. */
+function getRecordTimestamp(record: CodexLine): unknown {
+  if (record.timestamp !== undefined && record.timestamp !== null) return record.timestamp;
+  const payload = toObject(record.payload);
+  return payload.timestamp ?? payload.created_at;
 }
 
 function short(value: unknown, max = 800): string | undefined {
@@ -76,7 +88,7 @@ function parseLines(content: string): CodexLine[] {
 function mapResponseItem(record: CodexLine, intentId: string | undefined, now: string): AdaptedEvent[] {
   const payload = toObject(record.payload);
   const itemType = short(payload.type) ?? "unknown";
-  const ts = toIso(record.timestamp, now);
+  const ts = toIso(getRecordTimestamp(record), now);
 
   if (itemType === "function_call" || itemType === "custom_tool_call" || itemType === "web_search_call") {
     const action = short(payload.name) ?? short(toObject(payload.action).type) ?? itemType;
@@ -202,7 +214,7 @@ export const codexJsonlAdapter: RawAdapter = {
     }
     const meta = toObject(sessionMeta.payload);
     const sessionId = short(meta.id) ?? `codex_${Date.now()}`;
-    const start = toIso(meta.timestamp, toIso(sessionMeta.timestamp, now));
+    const start = toIso(getRecordTimestamp(sessionMeta) ?? meta.timestamp, now);
     let intentCounter = 0;
     let activeIntentId: string | undefined;
     const events: AdaptedEvent[] = [];
@@ -231,7 +243,7 @@ export const codexJsonlAdapter: RawAdapter = {
             activeIntentId = `intent_${sessionId}_${intentCounter}`;
             events.push({
               kind: "intent",
-              ts: toIso(record.timestamp, now),
+              ts: toIso(getRecordTimestamp(record), now),
               actor: { type: "user", id: "codex-user" },
               scope: { intent_id: activeIntentId },
               payload: {
@@ -249,7 +261,7 @@ export const codexJsonlAdapter: RawAdapter = {
           const usage = normalizeTokenUsage(p.info);
           events.push({
             kind: "token_usage_checkpoint",
-            ts: toIso(record.timestamp, now),
+            ts: toIso(getRecordTimestamp(record), now),
             actor: { type: "system", id: "codex" },
             scope: activeIntentId ? { intent_id: activeIntentId, module: "llm" } : { module: "llm" },
             payload: {
@@ -266,7 +278,7 @@ export const codexJsonlAdapter: RawAdapter = {
           if (reasoning) {
             events.push({
               kind: "artifact_created",
-              ts: toIso(record.timestamp, now),
+              ts: toIso(getRecordTimestamp(record), now),
               actor: { type: "agent", id: "codex" },
               scope: activeIntentId
                 ? { intent_id: activeIntentId, module: "reasoning" }
@@ -286,7 +298,7 @@ export const codexJsonlAdapter: RawAdapter = {
           if (assistantMessage) {
             events.push({
               kind: "artifact_created",
-              ts: toIso(record.timestamp, now),
+              ts: toIso(getRecordTimestamp(record), now),
               actor: { type: "agent", id: "codex" },
               scope: activeIntentId
                 ? { intent_id: activeIntentId, module: "assistant_output" }
@@ -307,7 +319,16 @@ export const codexJsonlAdapter: RawAdapter = {
       }
     }
 
-    const endTs = toIso(records[records.length - 1]?.timestamp, now);
+    const lastRecordTs = records.reduce<number | null>((acc, r) => {
+      const t = getRecordTimestamp(r);
+      const ms = typeof t === "number" && Number.isFinite(t) ? t : (typeof t === "string" ? new Date(t).getTime() : NaN);
+      if (Number.isNaN(ms)) return acc;
+      return acc == null ? ms : Math.max(acc, ms);
+    }, null);
+    const endTs =
+      lastRecordTs != null
+        ? new Date(lastRecordTs).toISOString()
+        : toIso(records[records.length - 1]?.timestamp, now);
     events.push({
       kind: "session_end",
       ts: endTs,

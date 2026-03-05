@@ -2,7 +2,7 @@
  * Ingest and merge logic tests.
  * Run from mcp-server: pnpm run build && pnpm test
  */
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, before, after } from "node:test";
@@ -127,5 +127,50 @@ describe("ingest", () => {
     assert.ok(result.session_id);
     assert.strictEqual(result.adapter, "codex_jsonl");
     assert.ok(result.inserted > 0);
+  });
+
+  it("merge raw log from different day: time window filters out all raw events", () => {
+    const sessionId = "sess_merge_target_time_window";
+    const sessionStartTs = "2026-03-02T20:55:12.151Z";
+    const sessionEndTs = "2026-03-02T20:57:42.004Z";
+    const sessionLines = [
+      JSON.stringify({
+        id: `${sessionId}:1:aa`,
+        session_id: sessionId,
+        seq: 1,
+        ts: sessionStartTs,
+        kind: "session_start",
+        actor: { type: "agent" },
+        payload: { goal: "Test" },
+        schema_version: 1,
+      }),
+      JSON.stringify({
+        id: `${sessionId}:2:bb`,
+        session_id: sessionId,
+        seq: 2,
+        ts: sessionEndTs,
+        kind: "session_end",
+        actor: { type: "agent" },
+        payload: { outcome: "completed" },
+        schema_version: 1,
+      }),
+    ].join("\n") + "\n";
+    writeFileSync(join(sessionsDir, `${sessionId}.jsonl`), sessionLines, "utf-8");
+
+    const raw = readFileSync(fixturePath("codex_sample.jsonl"), "utf-8");
+    const result = ingestRawContent(raw, {
+      adapter: "codex_jsonl",
+      merge_session_id: sessionId,
+    });
+
+    assert.strictEqual(result.session_id, sessionId);
+    assert.strictEqual(result.merge_strategy, "explicit_merge");
+    assert.strictEqual(result.inserted, 0, "no raw events fall in Mar 2 window");
+    assert.ok(
+      result.filtered_out_by_time_window !== undefined && result.filtered_out_by_time_window > 0,
+      "raw events (Feb 24) were filtered out by time window"
+    );
+    const eventsAfter = readSessionEvents(sessionId);
+    assert.strictEqual(eventsAfter.length, 2, "session still has only session_start and session_end");
   });
 });

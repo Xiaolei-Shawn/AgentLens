@@ -96,6 +96,61 @@ function toMs(raw: string | undefined): number | undefined {
   return Number.isNaN(ms) ? undefined : ms;
 }
 
+/** Padding (ms) around session time range when merging. Use 0 so only events strictly inside the session window are kept; raw adapters often synthesize timestamps at "now" which would otherwise fall in session_end+padding. */
+const MERGE_TIME_PADDING_MS = 0;
+
+/**
+ * Session time range from existing canonical events.
+ * Uses session_start / session_end ts when present, else first/last event ts.
+ */
+function getSessionTimeRange(existing: CanonicalEvent[]): { startMs: number; endMs: number } {
+  if (existing.length === 0) {
+    const now = Date.now();
+    return { startMs: now, endMs: now };
+  }
+  let sessionStartMs: number | undefined;
+  let sessionEndMs: number | undefined;
+  for (const e of existing) {
+    const ms = toMs(e.ts);
+    if (ms == null) continue;
+    if (e.kind === "session_start") sessionStartMs = ms;
+    if (e.kind === "session_end") sessionEndMs = ms;
+  }
+  const firstMs = toMs(existing[0]?.ts);
+  const lastMs = toMs(existing[existing.length - 1]?.ts);
+  return {
+    startMs: sessionStartMs ?? firstMs ?? Date.now(),
+    endMs: sessionEndMs ?? lastMs ?? Date.now(),
+  };
+}
+
+/**
+ * When merging raw into an existing session, keep only events that fall inside the
+ * session time window (with padding) and drop session_start/session_end from raw.
+ * Events without a parseable ts are excluded. Events on a different calendar day (UTC)
+ * from the session range are always excluded to avoid timezone/clock skew.
+ */
+function filterAdaptedEventsForMerge(
+  events: AdaptedEvent[],
+  range: { startMs: number; endMs: number },
+  paddingMs: number,
+  fallbackTs: string
+): AdaptedEvent[] {
+  const minMs = range.startMs - paddingMs;
+  const maxMs = range.endMs + paddingMs;
+  const startDay = new Date(range.startMs).toISOString().slice(0, 10);
+  const endDay = new Date(range.endMs).toISOString().slice(0, 10);
+  return events.filter((event) => {
+    if (event.kind === "session_start" || event.kind === "session_end") return false;
+    const ts = toIso(event.ts, fallbackTs);
+    const ms = toMs(ts);
+    if (ms == null) return false;
+    const eventDay = new Date(ms).toISOString().slice(0, 10);
+    if (eventDay < startDay || eventDay > endDay) return false;
+    return ms >= minMs && ms <= maxMs;
+  });
+}
+
 function normalizeFingerprint(value: string | undefined): string {
   if (!value) return "";
   return value
@@ -393,6 +448,8 @@ export interface IngestResult {
   adapter: string;
   inserted: number;
   skipped_duplicates: number;
+  /** When merging into an existing session, number of raw events dropped by the time-window filter. */
+  filtered_out_by_time_window?: number;
   session_path: string;
   raw_path: string;
   merge_strategy: "explicit_merge" | "adapted_session_id" | "fingerprint_match" | "new_session";
@@ -408,15 +465,30 @@ export function ingestRawContent(raw: string, options: IngestOptions = {}): Inge
   const fallbackTs = new Date().toISOString();
 
   const isMerge = existing.length > 0;
+  const isExplicitMerge = isMerge && Boolean(options.merge_session_id);
   const existingSemanticKeys = new Set(existing.map((e) => semanticDedupeKey(e)));
   const existingExactKeys = new Set(existing.map((e) => dedupeKey(e)));
+
+  const range = getSessionTimeRange(existing);
+  const eventsToProcess = isExplicitMerge
+    ? filterAdaptedEventsForMerge(
+        adapted.events,
+        range,
+        MERGE_TIME_PADDING_MS,
+        fallbackTs
+      )
+    : adapted.events;
+  const filteredOutByTimeWindow =
+    isExplicitMerge && adapted.events.length > eventsToProcess.length
+      ? adapted.events.length - eventsToProcess.length
+      : undefined;
 
   let seq = existing.length > 0 ? Math.max(...existing.map((e) => e.seq)) : 0;
   let inserted = 0;
   let skipped = 0;
   const toInsert: CanonicalEvent[] = [];
 
-  for (const event of adapted.events) {
+  for (const event of eventsToProcess) {
     const candidate = buildCanonicalEvent(sessionId, seq + 1, event, fallbackTs);
     if (doDedupe) {
       if (isMerge && existingSemanticKeys.has(semanticDedupeKey(candidate))) {
@@ -449,7 +521,7 @@ export function ingestRawContent(raw: string, options: IngestOptions = {}): Inge
 
   const rawPath = writeRawSidecar(sessionId, adapted.source, raw);
 
-  return {
+  const result: IngestResult = {
     session_id: sessionId,
     adapter: adapted.source,
     inserted,
@@ -459,6 +531,10 @@ export function ingestRawContent(raw: string, options: IngestOptions = {}): Inge
     merge_strategy: sessionSelection.strategy,
     merge_confidence: sessionSelection.fingerprint_confidence,
   };
+  if (filteredOutByTimeWindow !== undefined) {
+    result.filtered_out_by_time_window = filteredOutByTimeWindow;
+  }
+  return result;
 }
 
 export function ingestRawFile(filePath: string, options: IngestOptions = {}): IngestResult {
