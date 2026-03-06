@@ -31,6 +31,8 @@ interface McpImportResponse {
 
 const API_BASE =
   (import.meta.env.VITE_AUDIT_API_BASE as string | undefined)?.trim() ?? "";
+const APP_VERSION =
+  (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim() || "0.0.0";
 
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -768,17 +770,19 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
       {/* Footer */}
       <footer className="load-session__footer">
         <span className="load-session__footer-copy">
-          ©2024 AgentLens Engine. Built for high-performance animation
+          ©{new Date().getFullYear()} AgentLens Engine. Built for high-performance animation
           workflows.
         </span>
         <div className="load-session__footer-links">
-          <a href="#" className="load-session__footer-link">
+          <a
+            href="https://github.com/Xiaolei-Shawn/AgentLens"
+            className="load-session__footer-link"
+            target="_blank"
+            rel="noreferrer"
+          >
             Documentation
           </a>
-          <a href="#" className="load-session__footer-link">
-            Support
-          </a>
-          <span className="load-session__footer-version">v2.4.1-stable</span>
+          <span className="load-session__footer-version">v{APP_VERSION}</span>
         </div>
       </footer>
 
