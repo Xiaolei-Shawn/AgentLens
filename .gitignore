@@ -4,6 +4,7 @@ node_modules/
 # Build / dist
 dist/
 build/
+mcp-server/dashboard-public/
 *.tsbuildinfo
 
 # Env and secrets

@@ -29,6 +29,11 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Bundle webapp into mcp-server for npm
+        run: |
+          mkdir -p mcp-server/dashboard-public
+          cp -R webapp/dist/. mcp-server/dashboard-public/
+
       - name: Publish to npm
         run: pnpm -r publish --no-git-checks --access public
         env:

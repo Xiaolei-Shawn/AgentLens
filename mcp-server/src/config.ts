@@ -30,13 +30,18 @@ export function getDashboardPort(): number {
   return parsed;
 }
 
+/** Directory name for webapp bundled in the published npm package (CI copies webapp/dist here). */
+const BUNDLED_WEBAPP_DIR = "dashboard-public";
+
 export function getDashboardWebappDir(): string {
   const explicit = process.env.AL_DASHBOARD_WEBAPP_DIR ?? process.env.MCP_AL_DASHBOARD_WEBAPP_DIR;
   if (explicit) return resolve(explicit);
 
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  // dist/config.js -> ../.. lands in mcp-server root
+  // dist/config.js -> .. lands in mcp-server package root
   const serverRoot = resolve(moduleDir, "..");
+  const bundled = resolve(serverRoot, BUNDLED_WEBAPP_DIR);
+  if (existsSync(bundled)) return bundled;
   return resolve(serverRoot, "../webapp/dist");
 }
 

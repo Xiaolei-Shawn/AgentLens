@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "dashboard-public",
     "README.md",
     "LICENSE"
   ],
