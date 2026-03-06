@@ -1,14 +1,17 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { Session } from "../types/session";
-import { getRevisionIndexForEvent } from "../lib/fileEvolution";
 import { runAuditPostProcessing } from "../lib/auditPipeline";
 import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 import { ContextPathView } from "./ContextPathView";
 import { DeliverablesList } from "./DeliverablesList";
-import { FileEvolutionView } from "./FileEvolutionView";
+import { DeliverableWorkOverview } from "./DeliverableWorkOverview";
 import { deriveDeliverables, getIntentIdFromEvent, type DeliverableItem } from "../lib/deliverables";
+import {
+  getDecisionsForDeliverable,
+  getVerificationsForDeliverable,
+} from "../lib/deliverableContext";
 import {
   deriveIntentTokenBreakdown,
   generateFollowupArtifacts,
@@ -98,12 +101,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   }, [session.events]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
   type MainView = "deliverables" | "context" | "reviewer" | "pivot";
   const [mainView, setMainView] = useState<MainView>("reviewer");
   const [deliverableTab, setDeliverableTab] =
-    useState<DeliverableTab>("what_changed");
+    useState<DeliverableTab>("why_changed");
   const [selectedDeliverableId, setSelectedDeliverableId] = useState<
     string | null
   >(null);
@@ -169,17 +170,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     [isPlaying, stopPlayback],
   );
 
-  const handleOpenFileEvolution = useCallback(
-    (path: string, eventIndex: number) => {
-      setSelectedFilePath(path);
-      setSelectedRevisionIndex(
-        getRevisionIndexForEvent(session, path, eventIndex),
-      );
-      setCurrentIndex(eventIndex);
-    },
-    [session],
-  );
-
   const handlePlay = useCallback(() => setIsPlaying(true), []);
   const handlePause = useCallback(() => stopPlayback(), [stopPlayback]);
 
@@ -234,20 +224,13 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   useEffect(() => {
     if (deliverables.length === 0) {
       setSelectedDeliverableId(null);
-      setSelectedFilePath(null);
       return;
     }
     const selectedStillExists = selectedDeliverableId
       ? deliverables.some((item) => item.id === selectedDeliverableId)
       : false;
-    const nextSelectedId = selectedStillExists
-      ? selectedDeliverableId
-      : deliverables[0].id;
-    setSelectedDeliverableId(nextSelectedId);
-    const deliverable = deliverables.find((item) => item.id === nextSelectedId);
-    if (deliverable) {
-      setSelectedFilePath(deliverable.path);
-      setSelectedRevisionIndex(0);
+    if (!selectedStillExists) {
+      setSelectedDeliverableId(deliverables[0].id);
     }
   }, [deliverables, selectedDeliverableId]);
 
@@ -270,19 +253,14 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
   const handleSelectDeliverable = useCallback((id: string) => {
     setSelectedDeliverableId(id);
-    setDeliverableTab("what_changed");
+    setDeliverableTab("why_changed");
   }, []);
 
   const renderWhyChanged = useCallback(
     (deliverable: DeliverableItem) => {
+      const decisions = getDecisionsForDeliverable(session, deliverable);
+      const verifications = getVerificationsForDeliverable(session, deliverable);
       const contributions = deliverable.intent_contributions;
-      if (contributions.length === 0) {
-        return (
-          <p className="replay-placeholder-note">
-            No intent links were detected for this deliverable.
-          </p>
-        );
-      }
       const eventIndicesByIntent = new Map<string, number[]>();
       for (const index of deliverable.event_indices) {
         const event = session.events[index];
@@ -295,72 +273,128 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       }
       const primaryId =
         deliverable.primary_intent_id ?? contributions[0]?.intent_id;
+      const hasIntents = contributions.length > 0;
+      const hasDecisions = decisions.length > 0;
+      const hasVerifications = verifications.length > 0;
+
+      if (!hasIntents && !hasDecisions && !hasVerifications) {
+        return (
+          <p className="replay-placeholder-note">
+            No intent, decision, or verification links were detected for this deliverable.
+          </p>
+        );
+      }
 
       return (
-        <div className="deliverable-intents">
-          {contributions.map((item) => {
-            const intent = intentById.get(item.intent_id);
-            const isPrimary = item.intent_id === primaryId;
-            const roleLabel = isPrimary ? "Primary intent" : "Contributing intent";
-            const relatedIndices =
-              eventIndicesByIntent.get(item.intent_id) ?? [];
-            return (
-              <article
-                className="deliverable-intent-card"
-                key={`${deliverable.id}-${item.intent_id}`}
-              >
-                <header>
-                  <h4>{intent?.intent_title ?? item.intent_id}</h4>
-                  <span
-                    className={
-                      isPrimary
-                        ? "deliverable-intent-card__badge deliverable-intent-card__badge--primary"
-                        : "deliverable-intent-card__badge"
-                    }
-                  >
-                    {roleLabel}
-                  </span>
-                </header>
-                <p>
-                  Contribution: <strong>{formatPercent(item.percent)}</strong>
-                </p>
-                {intent ? (
-                  <p>
-                    Tokens {intent.total_tokens.toLocaleString()} · context{" "}
-                    {intent.context_tokens.toLocaleString()} · output{" "}
-                    {intent.output_tokens.toLocaleString()} · unknown{" "}
-                    {intent.unknown_tokens.toLocaleString()}
-                  </p>
-                ) : (
-                  <p>No token telemetry linked for this intent.</p>
-                )}
-                {relatedIndices.length > 0 ? (
-                  <div className="deliverable-intent-card__events">
-                    <span className="deliverable-intent-card__events-label">
-                      Related events:
+        <div className="deliverable-why-changed">
+          {hasDecisions ? (
+            <section className="deliverable-why-changed__section">
+              <h4 className="deliverable-why-changed__heading">Decisions affecting this file</h4>
+              <ul className="deliverable-why-changed__list">
+                {decisions.map((d) => (
+                  <li key={d.eventIndex}>
+                    <button
+                      type="button"
+                      className="deliverable-why-changed__event-btn"
+                      onClick={() => handleSeek(d.eventIndex)}
+                    >
+                      #{d.eventIndex + 1}
+                    </button>
+                    <span>{d.summary}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {hasVerifications ? (
+            <section className="deliverable-why-changed__section">
+              <h4 className="deliverable-why-changed__heading">Verifications</h4>
+              <ul className="deliverable-why-changed__list">
+                {verifications.map((v) => (
+                  <li key={v.eventIndex}>
+                    <button
+                      type="button"
+                      className="deliverable-why-changed__event-btn"
+                      onClick={() => handleSeek(v.eventIndex)}
+                    >
+                      #{v.eventIndex + 1}
+                    </button>
+                    <span className={`verification-result verification-result--${v.result}`}>
+                      {v.type}: {v.result}
                     </span>
-                    {relatedIndices.map((evIndex) => (
-                      <button
-                        type="button"
-                        key={evIndex}
-                        className="deliverable-intent-card__event-btn"
-                        onClick={() => {
-                          handleOpenFileEvolution(deliverable.path, evIndex);
-                          setDeliverableTab("what_changed");
-                        }}
-                      >
-                        #{evIndex + 1}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
+                    {v.details ? <span className="deliverable-why-changed__detail"> — {v.details}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {hasIntents ? (
+            <section className="deliverable-why-changed__section">
+              <h4 className="deliverable-why-changed__heading">Intent contributions</h4>
+              <div className="deliverable-intents">
+                {contributions.map((item) => {
+                  const intent = intentById.get(item.intent_id);
+                  const isPrimary = item.intent_id === primaryId;
+                  const roleLabel = isPrimary ? "Primary intent" : "Contributing intent";
+                  const relatedIndices =
+                    eventIndicesByIntent.get(item.intent_id) ?? [];
+                  return (
+                    <article
+                      className="deliverable-intent-card"
+                      key={`${deliverable.id}-${item.intent_id}`}
+                    >
+                      <header>
+                        <h4>{intent?.intent_title ?? item.intent_id}</h4>
+                        <span
+                          className={
+                            isPrimary
+                              ? "deliverable-intent-card__badge deliverable-intent-card__badge--primary"
+                              : "deliverable-intent-card__badge"
+                          }
+                        >
+                          {roleLabel}
+                        </span>
+                      </header>
+                      <p>
+                        Contribution: <strong>{formatPercent(item.percent)}</strong>
+                      </p>
+                      {intent ? (
+                        <p>
+                          Tokens {intent.total_tokens.toLocaleString()} · context{" "}
+                          {intent.context_tokens.toLocaleString()} · output{" "}
+                          {intent.output_tokens.toLocaleString()} · unknown{" "}
+                          {intent.unknown_tokens.toLocaleString()}
+                        </p>
+                      ) : (
+                        <p>No token telemetry linked for this intent.</p>
+                      )}
+                      {relatedIndices.length > 0 ? (
+                        <div className="deliverable-intent-card__events">
+                          <span className="deliverable-intent-card__events-label">
+                            Related events:
+                          </span>
+                          {relatedIndices.map((evIndex) => (
+                            <button
+                              type="button"
+                              key={evIndex}
+                              className="deliverable-intent-card__event-btn"
+                              onClick={() => handleSeek(evIndex)}
+                            >
+                              #{evIndex + 1}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
         </div>
       );
     },
-    [intentById, session.events, handleOpenFileEvolution, setDeliverableTab],
+    [intentById, session, handleSeek],
   );
 
   const renderCost = useCallback(
@@ -806,20 +840,20 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     <button
                       type="button"
                       className={
-                        deliverableTab === "what_changed" ? "active" : ""
-                      }
-                      onClick={() => setDeliverableTab("what_changed")}
-                    >
-                      What changed
-                    </button>
-                    <button
-                      type="button"
-                      className={
                         deliverableTab === "why_changed" ? "active" : ""
                       }
                       onClick={() => setDeliverableTab("why_changed")}
                     >
                       Why changed
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        deliverableTab === "what_changed" ? "active" : ""
+                      }
+                      onClick={() => setDeliverableTab("what_changed")}
+                    >
+                      What changed
                     </button>
                     <button
                       type="button"
@@ -832,44 +866,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
                   {deliverableTab === "what_changed" ? (
                     <section className="deliverable-pane">
-                      <h3 className="deliverable-pane__title">
-                        File evolution / diffs
-                      </h3>
-                      <p className="deliverable-pane__hint">
-                        Revisions and diffs for this file. Jump to an event to
-                        see the change at that point in the session.
-                      </p>
-                      {selectedDeliverable.event_indices.length > 0 ? (
-                        <div className="deliverable-event-links">
-                          <span className="deliverable-event-links__label">
-                            Jump to event:
-                          </span>
-                          {selectedDeliverable.event_indices
-                            .slice(-12)
-                            .map((index) => (
-                              <button
-                                type="button"
-                                key={`${selectedDeliverable.id}-${index}`}
-                                onClick={() =>
-                                  handleOpenFileEvolution(
-                                    selectedDeliverable.path,
-                                    index,
-                                  )
-                                }
-                              >
-                                #{index + 1}
-                              </button>
-                            ))}
-                        </div>
-                      ) : null}
-                      {selectedFilePath ? (
-                        <FileEvolutionView
-                          session={session}
-                          path={selectedFilePath}
-                          revisionIndex={selectedRevisionIndex}
-                          onRevisionChange={setSelectedRevisionIndex}
-                        />
-                      ) : null}
+                      <DeliverableWorkOverview
+                        session={session}
+                        deliverable={selectedDeliverable}
+                        onSeek={handleSeek}
+                      />
                     </section>
                   ) : null}
 
@@ -881,6 +882,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
                   {deliverableTab === "cost" ? (
                     <section className="deliverable-pane">
+                      <h3 className="deliverable-pane__title">Cost breakdown by intent</h3>
+                      <p className="deliverable-pane__hint">
+                        Token and cost share attributed to each intent that contributed to this deliverable.
+                      </p>
                       {renderCost(selectedDeliverable)}
                     </section>
                   ) : null}
@@ -888,8 +893,8 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               ) : (
                 <div className="replay-placeholder">
                   <p>
-                    Select a deliverable to inspect what changed, why it
-                    changed, and associated intent cost.
+                    Select a deliverable to inspect why it changed, what work was
+                    done, and associated intent cost.
                   </p>
                 </div>
               )}
