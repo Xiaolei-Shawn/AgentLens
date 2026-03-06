@@ -1,6 +1,6 @@
-# AL Session Replay (Web App)
+# AgentLens Session Replay (Web App)
 
-Local web app for viewing agent session replays. Load a session JSON file (from MCP flush or sample fixtures), then use the timeline to scrub events, story steps, and playback.
+Local web app for viewing agent session replays. Load a session JSON file (from the MCP server or sample fixtures), then use the timeline to scrub events, story steps, and playback.
 
 ## Stories covered
 
@@ -12,6 +12,8 @@ Local web app for viewing agent session replays. Load a session JSON file (from 
 
 ## Run
 
+From the [monorepo root](https://github.com/Xiaolei-Shawn/AgentLens):
+
 ```bash
 pnpm install
 pnpm --filter webapp dev
@@ -21,13 +23,13 @@ Open the URL shown (e.g. http://localhost:5173). Drop a session JSON file (e.g. 
 
 ## Build
 
+From the monorepo root:
+
 ```bash
 pnpm --filter webapp build
 ```
 
-Output is in `dist/`. Serve with any static server or open `dist/index.html` (file://) if the app supports it.
-
-All analyzer and recommendation features are included in this open-source repo.
+Output is in `webapp/dist/`. The MCP server can serve this directory (or use it when publishing the npm package). You can also serve `dist/` with any static server.
 
 ## Session format
 

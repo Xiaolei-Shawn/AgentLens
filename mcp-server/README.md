@@ -95,7 +95,7 @@ API endpoints:
 - `POST /api/gateway/end`
 - `POST /api/ingest`
 
-If web assets are available (default `../webapp/dist`), they are served by the same server.
+When installed from npm, the dashboard UI is bundled and served automatically. When running from the repo, the server uses `../webapp/dist` if present (run `pnpm run build` in the webapp first). Override with `AL_DASHBOARD_WEBAPP_DIR`.
 
 ## Automatic instrumentation defaults
 
@@ -133,6 +133,8 @@ To reduce agent friction:
 ```
 
 ## Build from source
+
+From the [monorepo root](https://github.com/Xiaolei-Shawn/AgentLens):
 
 ```bash
 pnpm install
@@ -191,18 +193,12 @@ Notes:
 
 ## Publish checklist
 
+Releases can be triggered from the repo by creating a [GitHub Release](https://github.com/Xiaolei-Shawn/AgentLens/releases); the workflow builds the monorepo, bundles the webapp into this package, and publishes to npm.
+
+For manual publish from the monorepo:
+
 1. Update version in `package.json`.
-2. Confirm repository URLs in `package.json` are correct.
-3. Run:
-
-```bash
-npm run build
-npm pack --dry-run
-npm publish --access public --dry-run
-```
-
-4. Publish:
-
-```bash
-npm publish --access public
-```
+2. From repo root: build (including webapp), then copy `webapp/dist` to `mcp-server/dashboard-public` so the dashboard is bundled (or rely on CI to do this).
+3. Confirm repository URLs in `package.json` are correct.
+4. From this directory: `npm run build`, then `npm pack --dry-run` and `npm publish --access public --dry-run` to verify.
+5. Publish: `npm publish --access public`.

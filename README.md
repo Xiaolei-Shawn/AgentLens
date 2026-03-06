@@ -1,13 +1,13 @@
 # AgentLens
 
-AgentLens is a local-first audit toolkit for AI agent sessions.
+AgentLens (AL) is a local-first audit toolkit for AI agent sessions.
+
+- **[GitHub](https://github.com/Xiaolei-Shawn/AgentLens)** — source and issues
 
 ## Packages
 
-- `@xiaolei.shawn/schema`  
-  Canonical event envelope and session schema validation utilities.
-- `@xiaolei.shawn/mcp-server`  
-  MCP gateway server + local dashboard for recording and reviewing agent activity.
+- **[@xiaolei.shawn/schema](schema/)** — Canonical event envelope and session schema validation.
+- **[@xiaolei.shawn/mcp-server](mcp-server/)** — MCP gateway server and local dashboard for recording and reviewing agent activity. See [mcp-server/README.md](mcp-server/README.md) for full docs.
 
 ## Install
 
@@ -16,31 +16,37 @@ npm install @xiaolei.shawn/schema
 npm install @xiaolei.shawn/mcp-server
 ```
 
-## Quick Start (MCP Server)
+## Quick start (MCP server)
+
+Run without installing (dashboard at http://127.0.0.1:4317):
 
 ```bash
 npx @xiaolei.shawn/mcp-server start --open
 ```
 
-MCP mode for agent integration:
+MCP mode for Cursor/Codex integration:
 
 ```bash
 npx @xiaolei.shawn/mcp-server mcp
 ```
 
-## Monorepo Development
+After install you can use the `agentlens` (or `al-mcp`) binary instead of `npx @xiaolei.shawn/mcp-server`.
+
+## Monorepo development
+
+From the repo root:
 
 ```bash
 pnpm install
 pnpm -r build
 ```
 
-## Integration Check
+See [mcp-server/README.md](mcp-server/README.md) for building/running individual packages.
 
-Run a full compatibility check (schema + mcp-server + webapp):
+## Integration check
+
+Build all packages, start the MCP server, and verify API and dashboard:
 
 ```bash
 pnpm run verify:integration
 ```
-
-This command builds all packages, starts MCP server locally, verifies key API endpoints, and checks dashboard static serving.
