@@ -1,7 +1,7 @@
 {
   "name": "@xiaolei.shawn/mcp-server",
-  "version": "0.4.0",
-  "description": "Local-first MCP server for AI agent session auditing, with embedded dashboard.",
+  "version": "0.4.1",
+  "description": "Local-first MCP server for AI agent session auditing, with embedded dashboard. Using the mcp-gateway-audit agent skill is highly recommended for complete canonical event traces.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {

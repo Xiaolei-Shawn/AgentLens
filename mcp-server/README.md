@@ -48,6 +48,15 @@ MCP mode (for Cursor/Codex MCP config):
 agentlens mcp
 ```
 
+## Recommended: use the agent skill
+
+**Using the [mcp-gateway-audit](https://github.com/Xiaolei-Shawn/AgentLens/tree/main/skills/mcp-gateway-audit) skill is highly recommended when using this MCP server.** The skill instructs the agent to follow a strict tracing contract so every run produces a complete canonical event trace (session_start, intent, file_op, tool_call, decision, assumption, verification, session_end) for replay and analysis in the AgentLens dashboard.
+
+- **Install the skill** in Cursor or Codex from the repo: copy [skills/mcp-gateway-audit](https://github.com/Xiaolei-Shawn/AgentLens/tree/main/skills/mcp-gateway-audit) into your `.cursor/skills/` or `.codex/skills/` directory, or add the repo skill path if your editor supports it.
+- **Trigger in chat:** include *"Use MCP gateway audit mode for this task."* in your prompt; the agent will then apply the tracing rules automatically.
+
+Without the skill, the agent may still call the gateway tools, but sessions are often incomplete. With the skill, you get consistent, dashboard-ready traces.
+
 ## MCP Tools
 
 ### Canonical recorders

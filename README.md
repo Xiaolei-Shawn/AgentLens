@@ -33,6 +33,8 @@ npx @xiaolei.shawn/mcp-server mcp
 
 After install you can use the `agentlens` (or `al-mcp`) binary instead of `npx @xiaolei.shawn/mcp-server`.
 
+**Recommended:** Use the [mcp-gateway-audit](skills/mcp-gateway-audit/) agent skill when using the MCP server so the agent produces complete canonical event traces for the dashboard. See [mcp-server README](mcp-server/README.md#recommended-use-the-agent-skill).
+
 ## Monorepo development
 
 From the repo root:
