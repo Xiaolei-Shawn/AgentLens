@@ -2,6 +2,13 @@
 
 Fully local MCP server for AI agent session auditing that serves a local dashboard from the same process.
 
+The local dashboard is centered on **Trust View**, a session inspection surface for the exact trust failures highlighted by the Claude Code leak discussion:
+
+- hidden data egress
+- remote control paths
+- opaque prompt or tool mutation
+- background activity outside the visible user flow
+
 - Records canonical session events via MCP tools
 - Persists events as local JSONL files
 - Runs fully on the local machine and serves a local web dashboard + API from the same process
@@ -21,6 +28,7 @@ You can point the built-in dashboard server to any static bundle via `AL_DASHBOA
 - Canonical event capture with sequence ordering and timestamps
 - Gateway tools for low-friction agent instrumentation
 - Local dashboard server + API
+- Trust View for outbound, control-surface, transparency, safety-mode, and evidence-graph analysis
 - Session storage on local disk (`AL_SESSIONS_DIR`)
 - Local gateway API for middleware (`/api/gateway/*`)
 - Export session JSON with normalized snapshot (`agentlens export`)
@@ -90,6 +98,13 @@ Without the skill, the agent may still call the gateway tools, but sessions are 
 ## Local Dashboard
 
 When the server starts, it also runs a local HTTP server (enabled by default).
+
+The local dashboard includes Trust View for reviewing:
+
+- what data left the machine
+- what could remotely influence the agent
+- whether the session was executed transparently
+- whether background work happened outside the visible user flow
 
 Default URL:
 
