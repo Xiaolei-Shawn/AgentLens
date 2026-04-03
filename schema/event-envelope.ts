@@ -20,7 +20,14 @@ export type EventKind =
   | "token_usage_checkpoint"
   | "session_quality"
   | "replay_bookmark"
-  | "hotspot";
+  | "hotspot"
+  | "network_egress"
+  | "policy_change"
+  | "background_activity"
+  | "memory_op"
+  | "prompt_transform"
+  | "remote_code_load"
+  | "capability_snapshot";
 
 export interface TokenUsagePayload extends Record<string, unknown> {
   usage?: {

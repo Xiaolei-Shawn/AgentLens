@@ -1,7 +1,7 @@
 {
   "name": "@xiaolei.shawn/schema",
   "version": "0.1.1",
-  "description": "Session schema and validation for AL MCP and extension",
+  "description": "Shared AgentLens schemas and TypeScript contracts for canonical events, trust review, evidence graph, forensic inputs, and session validation.",
   "type": "module",
   "main": "dist/validateSession.js",
   "types": "dist/validateSession.d.ts",
@@ -15,6 +15,21 @@
       "types": "./dist/event-envelope.d.ts",
       "import": "./dist/event-envelope.js",
       "default": "./dist/event-envelope.js"
+    },
+    "./trust-review": {
+      "types": "./dist/trust-review.d.ts",
+      "import": "./dist/trust-review.js",
+      "default": "./dist/trust-review.js"
+    },
+    "./forensic-inputs": {
+      "types": "./dist/forensic-inputs.d.ts",
+      "import": "./dist/forensic-inputs.js",
+      "default": "./dist/forensic-inputs.js"
+    },
+    "./evidence-graph": {
+      "types": "./dist/evidence-graph.d.ts",
+      "import": "./dist/evidence-graph.js",
+      "default": "./dist/evidence-graph.js"
     },
     "./session-schema": {
       "types": "./dist/session-schema.d.ts",

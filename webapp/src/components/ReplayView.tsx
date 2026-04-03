@@ -8,6 +8,7 @@ import { ContextPathView } from "./ContextPathView";
 import { OrchestrationView } from "./OrchestrationView";
 import { DeliverablesList } from "./DeliverablesList";
 import { DeliverableWorkOverview } from "./DeliverableWorkOverview";
+import { TrustReviewView } from "./TrustReviewView";
 import { deriveDeliverables, getIntentIdFromEvent, type DeliverableItem } from "../lib/deliverables";
 import {
   getDecisionsForDeliverable,
@@ -102,7 +103,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   }, [session.events]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  type MainView = "orchestration" | "deliverables" | "context" | "reviewer" | "pivot";
+  type MainView = "orchestration" | "deliverables" | "context" | "reviewer" | "trust" | "pivot";
   const [mainView, setMainView] = useState<MainView>("orchestration");
   const [deliverableTab, setDeliverableTab] =
     useState<DeliverableTab>("why_changed");
@@ -551,6 +552,15 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </button>
           <button
             type="button"
+            className={`replay-nav-strip__btn replay-nav-strip__btn--trust ${mainView === "trust" ? "active" : ""}`}
+            onClick={() => setMainView("trust")}
+            title="Trust Review"
+            aria-label="Trust Review"
+          >
+            <span aria-hidden>◈</span>
+          </button>
+          <button
+            type="button"
             className={`replay-nav-strip__btn replay-nav-strip__btn--pivot ${mainView === "pivot" ? "active" : ""}`}
             onClick={() => setMainView("pivot")}
             title="Pivot: immersive mission flow"
@@ -570,19 +580,22 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </aside>
         )}
         <main className="replay-main">
-          {mainView === "pivot" && (
-            <FlowView
-              session={session}
-              currentIndex={currentIndex}
-              onSeek={handleSeek}
-              isPlaying={isPlaying}
-              onPlay={handlePlay}
-              onPause={handlePause}
-              allowPerspective={true}
-            />
-          )}
-          {mainView !== "pivot" && (
-            <>
+            {mainView === "pivot" && (
+              <FlowView
+                session={session}
+                currentIndex={currentIndex}
+                onSeek={handleSeek}
+                isPlaying={isPlaying}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                allowPerspective={true}
+              />
+            )}
+            {mainView === "trust" && (
+              <TrustReviewView session={session} onSeek={handleSeek} />
+            )}
+            {mainView !== "pivot" && (
+              <>
               {mainView === "reviewer" ? (
                 <>
                   <ReviewerHighlights
@@ -826,7 +839,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                   currentIndex={currentIndex}
                   onSeek={handleSeek}
                 />
-              ) : selectedDeliverable ? (
+              ) : mainView === "deliverables" && selectedDeliverable ? (
                 <>
                   <section className="deliverable-summary">
                     <header className="deliverable-summary__header">
@@ -905,14 +918,14 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     </section>
                   ) : null}
                 </>
-              ) : (
+              ) : mainView === "deliverables" ? (
                 <div className="replay-placeholder">
                   <p>
                     Select a deliverable to inspect why it changed, what work was
                     done, and associated intent cost.
                   </p>
                 </div>
-              )}
+              ) : null}
             </>
           )}
         </main>

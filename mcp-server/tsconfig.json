@@ -8,7 +8,9 @@
     "strict": true,
     "declaration": true,
     "resolveJsonModule": true,
+    "baseUrl": ".",
     "paths": {
+      "@xiaolei.shawn/schema/*": ["../schema/dist/*"],
       "@modelcontextprotocol/sdk/server/mcp.js": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.d.ts"],
       "@modelcontextprotocol/sdk/server/stdio.js": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.d.ts"]
     }

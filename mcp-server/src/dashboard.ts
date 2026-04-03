@@ -21,7 +21,16 @@ import {
   type FollowupMode,
   type FollowupStrictness,
 } from "./local-analysis.js";
+import { analyzeTrust } from "./trust-analysis.js";
+import type { TrustAnalysisResult } from "../../schema/dist/trust-review.js";
+import { analyzeEvidenceGraph } from "./evidence-graph-analysis.js";
+import type { EvidenceGraphResult } from "../../schema/dist/evidence-graph.js";
 import { deriveSubagentGraph } from "./subagent-analysis.js";
+import {
+  attachForensicAttachmentsFromBody,
+  getForensicSessionSummary,
+  getForensicSignalsForSession,
+} from "./forensic-inputs.js";
 
 interface SessionFileSummary {
   key: string;
@@ -224,6 +233,37 @@ function summarizeSessionPayload(payload: SessionPayload): Omit<SessionFileSumma
     outcome: deriveOutcome(payload.events),
     event_count: payload.events.length,
   };
+}
+
+function findSessionSummaryByKey(key: string): SessionFileSummary | undefined {
+  return listSessionFiles().find((item) => item.key === key || item.session_id === key);
+}
+
+export function getTrustAnalysisForSessionKey(key: string): TrustAnalysisResult {
+  const summary = findSessionSummaryByKey(key);
+  if (!summary) {
+    throw new Error("Session not found.");
+  }
+  const payload = readSessionFile(summary.absolute_path);
+  const forensicSignals = getForensicSignalsForSession(summary.session_id);
+  return analyzeTrust([...payload.events, ...forensicSignals]);
+}
+
+export function getForensicSessionSummaryForSessionKey(key: string) {
+  const summary = findSessionSummaryByKey(key);
+  if (!summary) {
+    throw new Error("Session not found.");
+  }
+  return getForensicSessionSummary(summary.session_id);
+}
+
+export function getEvidenceGraphForSessionKey(key: string): EvidenceGraphResult {
+  const summary = findSessionSummaryByKey(key);
+  if (!summary) {
+    throw new Error("Session not found.");
+  }
+  const payload = readSessionFile(summary.absolute_path);
+  return analyzeEvidenceGraph(payload.events);
 }
 
 /** Merge multiple session payloads into one: combined events sorted by ts, single session_id, re-sequenced. */
@@ -876,7 +916,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
     if (key.endsWith("/subagent-graph")) {
       const rawKey = key.slice(0, -"/subagent-graph".length);
-      const summary = listSessionFiles().find((item) => item.key === rawKey || item.session_id === rawKey);
+      const summary = findSessionSummaryByKey(rawKey);
       if (!summary) {
         json(res, 404, { error: "Session not found." });
         return true;
@@ -897,7 +937,114 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return true;
     }
 
-    const summary = listSessionFiles().find((item) => item.key === key || item.session_id === key);
+    if (key.endsWith("/evidence-graph")) {
+      const rawKey = key.slice(0, -"/evidence-graph".length);
+      const summary = findSessionSummaryByKey(rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      try {
+        const graph = getEvidenceGraphForSessionKey(rawKey);
+        json(res, 200, {
+          generated_at: new Date().toISOString(),
+          ...graph,
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : "Failed to derive evidence graph.",
+        });
+      }
+      return true;
+    }
+
+    if (key.endsWith("/forensic/analyze")) {
+      const rawKey = key.slice(0, -"/forensic/analyze".length);
+      const summary = findSessionSummaryByKey(rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return true;
+      }
+      try {
+        const forensic = getForensicSessionSummaryForSessionKey(rawKey);
+        const trust = getTrustAnalysisForSessionKey(rawKey);
+        json(res, 200, {
+          session_id: summary.session_id,
+          generated_at: new Date().toISOString(),
+          forensic,
+          trust,
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : "Failed to analyze forensic inputs.",
+        });
+      }
+      return true;
+    }
+
+    if (key.endsWith("/forensic")) {
+      const rawKey = key.slice(0, -"/forensic".length);
+      const summary = findSessionSummaryByKey(rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      if (req.method === "GET") {
+        try {
+          const forensic = getForensicSessionSummaryForSessionKey(rawKey);
+          json(res, 200, forensic);
+        } catch (error) {
+          json(res, 500, {
+            error: error instanceof Error ? error.message : "Failed to load forensic inputs.",
+          });
+        }
+        return true;
+      }
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return true;
+      }
+      try {
+        const body = await readJsonBody(req);
+        const attached = await attachForensicAttachmentsFromBody(summary.session_id, body, "api");
+        const trust = getTrustAnalysisForSessionKey(rawKey);
+        json(res, 200, {
+          session_id: summary.session_id,
+          generated_at: new Date().toISOString(),
+          forensic: attached,
+          trust,
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return true;
+    }
+
+    if (key.endsWith("/trust")) {
+      const rawKey = key.slice(0, -"/trust".length);
+      const summary = findSessionSummaryByKey(rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      try {
+        const trust = getTrustAnalysisForSessionKey(rawKey);
+        json(res, 200, trust);
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : "Failed to derive trust analysis.",
+        });
+      }
+      return true;
+    }
+
+    const summary = findSessionSummaryByKey(key);
     if (!summary) {
       json(res, 404, { error: "Session not found." });
       return true;

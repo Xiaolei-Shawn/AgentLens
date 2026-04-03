@@ -195,6 +195,97 @@ const hotspotSchema = z
   })
   .strict();
 
+const trustNetworkEgressSchema = z
+  .object({
+    endpoint: z.string().min(1),
+    endpoint_type: z.enum(["model_api", "telemetry", "error_reporting", "policy", "storage", "unknown"]).optional(),
+    method: z.string().min(1).optional(),
+    transport: z.enum(["https", "ws", "unix_socket", "local", "unknown"]).optional(),
+    data_classes: z.array(z.string().min(1)).optional(),
+    content_visibility: z.enum(["full", "summary", "metadata_only", "unknown"]).optional(),
+    user_visible: z.boolean().optional(),
+    blocked: z.boolean().optional(),
+    bytes_out: z.number().int().nonnegative().optional(),
+    bytes_in: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+const trustPolicyChangeSchema = z
+  .object({
+    source: z.enum(["local_config", "remote_policy", "feature_flag", "env_override", "auto_update"]),
+    key: z.string().min(1),
+    old_value: z.unknown().optional(),
+    new_value: z.unknown().optional(),
+    user_notified: z.boolean().optional(),
+    severity: z.enum(["low", "medium", "high"]).optional(),
+  })
+  .strict();
+
+const trustBackgroundActivitySchema = z
+  .object({
+    worker_type: z.enum(["subagent", "memory_compactor", "auto_summary", "watcher", "daemon", "unknown"]),
+    action: z.enum(["spawn", "read", "write", "retry", "stop"]),
+    visibility: z.enum(["foreground", "background", "silent"]),
+    reads_session_history: z.boolean().optional(),
+  })
+  .strict();
+
+const trustMemoryOpSchema = z
+  .object({
+    store: z.enum(["local_memory", "team_memory", "session_jsonl", "external_memory", "unknown"]),
+    op: z.enum(["read", "write", "sync", "inject"]),
+    path: z.string().min(1).optional(),
+    data_classes: z.array(z.string().min(1)).optional(),
+    remote_sync: z.boolean().optional(),
+  })
+  .strict();
+
+const trustPromptTransformSchema = z
+  .object({
+    transform_type: z.enum([
+      "system_injection",
+      "tool_injection",
+      "summary_rewrite",
+      "memory_injection",
+      "policy_injection",
+    ]),
+    before_hash: z.string().min(1).optional(),
+    after_hash: z.string().min(1).optional(),
+    before_excerpt: z.string().optional(),
+    after_excerpt: z.string().optional(),
+    opaque: z.boolean().optional(),
+    source: z.string().min(1).optional(),
+  })
+  .strict();
+
+const trustRemoteCodeLoadSchema = z
+  .object({
+    source: z.string().min(1),
+    uri: z.string().min(1).optional(),
+    bytes: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+const trustCapabilityToolSchema = z
+  .object({
+    name: z.string().min(1),
+    category: z.string().min(1).optional(),
+    enabled: z.boolean(),
+  })
+  .strict();
+
+const trustCapabilitySnapshotSchema = z
+  .object({
+    tools: z.array(trustCapabilityToolSchema).optional(),
+    network_enabled: z.boolean().optional(),
+    filesystem_write_enabled: z.boolean().optional(),
+    shell_enabled: z.boolean().optional(),
+    browser_enabled: z.boolean().optional(),
+    remote_skill_enabled: z.boolean().optional(),
+    policy_managed: z.boolean().optional(),
+  })
+  .strict();
+
 const sessionEndSchema = z
   .object({
     outcome: z.enum(["completed", "partial", "failed", "aborted"]),
@@ -237,6 +328,13 @@ const gatewayActSchema = z
       "session_quality",
       "replay_bookmark",
       "hotspot",
+      "network_egress",
+      "policy_change",
+      "background_activity",
+      "memory_op",
+      "prompt_transform",
+      "remote_code_load",
+      "capability_snapshot",
     ]),
     action: z.string().min(1).optional(),
     target: z.string().min(1).optional(),
@@ -267,6 +365,13 @@ const gatewayActSchema = z
     session_quality: sessionQualitySchema.optional(),
     replay_bookmark: replayBookmarkSchema.optional(),
     hotspot: hotspotSchema.optional(),
+    network_egress: trustNetworkEgressSchema.optional(),
+    policy_change: trustPolicyChangeSchema.optional(),
+    background_activity: trustBackgroundActivitySchema.optional(),
+    memory_op: trustMemoryOpSchema.optional(),
+    prompt_transform: trustPromptTransformSchema.optional(),
+    remote_code_load: trustRemoteCodeLoadSchema.optional(),
+    capability_snapshot: trustCapabilitySnapshotSchema.optional(),
     visibility: z.enum(["raw", "review", "debug"]).optional(),
   })
   .strict();
@@ -394,6 +499,48 @@ export const GATEWAY_RULES = {
     required_fields: ["hotspot.file", "hotspot.score"] as const,
     default_visibility: "review" as const,
   },
+  network_egress: {
+    maps_to_tool: "record_network_egress",
+    emits_kind: "network_egress",
+    required_fields: ["network_egress.endpoint"] as const,
+    default_visibility: "raw" as const,
+  },
+  policy_change: {
+    maps_to_tool: "record_policy_change",
+    emits_kind: "policy_change",
+    required_fields: ["policy_change.source", "policy_change.key"] as const,
+    default_visibility: "review" as const,
+  },
+  background_activity: {
+    maps_to_tool: "record_background_activity",
+    emits_kind: "background_activity",
+    required_fields: ["background_activity.worker_type", "background_activity.action"] as const,
+    default_visibility: "review" as const,
+  },
+  memory_op: {
+    maps_to_tool: "record_memory_op",
+    emits_kind: "memory_op",
+    required_fields: ["memory_op.store", "memory_op.op"] as const,
+    default_visibility: "review" as const,
+  },
+  prompt_transform: {
+    maps_to_tool: "record_prompt_transform",
+    emits_kind: "prompt_transform",
+    required_fields: ["prompt_transform.transform_type"] as const,
+    default_visibility: "review" as const,
+  },
+  remote_code_load: {
+    maps_to_tool: "record_remote_code_load",
+    emits_kind: "remote_code_load",
+    required_fields: ["remote_code_load.source"] as const,
+    default_visibility: "review" as const,
+  },
+  capability_snapshot: {
+    maps_to_tool: "record_capability_snapshot",
+    emits_kind: "capability_snapshot",
+    required_fields: [] as const,
+    default_visibility: "review" as const,
+  },
 } as const;
 
 function textContent(value: unknown): ToolResponse {
@@ -430,6 +577,26 @@ async function appendCurrentSessionEvent(input: {
   });
   await persistEvent(event);
   return event;
+}
+
+async function appendTrustCurrentSessionEvent(input: {
+  kind:
+    | "network_egress"
+    | "policy_change"
+    | "background_activity"
+    | "memory_op"
+    | "prompt_transform"
+    | "remote_code_load"
+    | "capability_snapshot";
+  payload: Record<string, unknown>;
+  scope?: {
+    intent_id?: string;
+    file?: string;
+    module?: string;
+  };
+  visibility?: EventVisibility;
+}): Promise<CanonicalEvent> {
+  return appendCurrentSessionEvent(input);
 }
 
 async function ensureGatewaySession(): Promise<ReturnType<typeof ensureActiveSession>> {
@@ -1203,6 +1370,94 @@ export async function handleGatewayAct(raw: z.infer<typeof gatewayActSchema>): P
         kind: "hotspot",
         payload: args.hotspot,
         scope: { intent_id: state.active_intent_id, file: args.hotspot.file, module: args.hotspot.module },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "network_egress") {
+      if (!args.network_egress) throw new Error("op=network_egress requires `network_egress` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "network_egress",
+        payload: {
+          endpoint: args.network_egress.endpoint,
+          endpoint_type: args.network_egress.endpoint_type,
+          method: args.network_egress.method,
+          transport: args.network_egress.transport,
+          data_classes: args.network_egress.data_classes ?? [],
+          content_visibility: args.network_egress.content_visibility,
+          user_visible: args.network_egress.user_visible,
+          blocked: args.network_egress.blocked,
+          bytes_out: args.network_egress.bytes_out,
+          bytes_in: args.network_egress.bytes_in,
+        },
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "policy_change") {
+      if (!args.policy_change) throw new Error("op=policy_change requires `policy_change` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "policy_change",
+        payload: args.policy_change,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "background_activity") {
+      if (!args.background_activity) throw new Error("op=background_activity requires `background_activity` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "background_activity",
+        payload: args.background_activity,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "memory_op") {
+      if (!args.memory_op) throw new Error("op=memory_op requires `memory_op` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "memory_op",
+        payload: args.memory_op,
+        scope: { intent_id: state.active_intent_id, file: args.memory_op.path },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "prompt_transform") {
+      if (!args.prompt_transform) throw new Error("op=prompt_transform requires `prompt_transform` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "prompt_transform",
+        payload: args.prompt_transform,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "remote_code_load") {
+      if (!args.remote_code_load) throw new Error("op=remote_code_load requires `remote_code_load` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "remote_code_load",
+        payload: args.remote_code_load,
+        scope: { intent_id: state.active_intent_id },
+        visibility,
+      });
+      return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });
+    }
+
+    if (args.op === "capability_snapshot") {
+      if (!args.capability_snapshot) throw new Error("op=capability_snapshot requires `capability_snapshot` payload.");
+      const event = await appendTrustCurrentSessionEvent({
+        kind: "capability_snapshot",
+        payload: args.capability_snapshot,
+        scope: { intent_id: state.active_intent_id },
         visibility,
       });
       return textContent({ mapped_tool: rule.maps_to_tool, event_id: event.id, kind: event.kind, seq: event.seq, ts: event.ts });

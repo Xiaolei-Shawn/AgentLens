@@ -1,7 +1,7 @@
 {
   "name": "@xiaolei.shawn/mcp-server",
   "version": "0.4.1",
-  "description": "Local-first MCP server for AI agent session auditing, with embedded dashboard. Using the mcp-gateway-audit agent skill is highly recommended for complete canonical event traces.",
+  "description": "Local-first MCP server for AI agent session recording, trust review, evidence-graph analysis, forensic input ingestion, and embedded dashboard APIs.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@xiaolei.shawn/schema": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
