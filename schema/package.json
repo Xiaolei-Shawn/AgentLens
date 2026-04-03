@@ -1,6 +1,6 @@
 {
   "name": "@xiaolei.shawn/schema",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Shared AgentLens schemas and TypeScript contracts for canonical events, trust review, evidence graph, forensic inputs, and session validation.",
   "type": "module",
   "main": "dist/validateSession.js",
