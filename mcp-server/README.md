@@ -1,10 +1,10 @@
 # @xiaolei.shawn/mcp-server
 
-Local-first MCP server for AI agent session auditing.
+Fully local MCP server for AI agent session auditing that serves a local dashboard from the same process.
 
 - Records canonical session events via MCP tools
 - Persists events as local JSONL files
-- Serves a local web dashboard + API from the same process
+- Runs fully on the local machine and serves a local web dashboard + API from the same process
 - Data never leaves the machine unless you explicitly move files
 
 ## Open-source connector model

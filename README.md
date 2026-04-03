@@ -17,7 +17,7 @@ AgentLens helps users inspect what an AI agent actually did during a session and
 ## Packages
 
 - **[@xiaolei.shawn/schema](schema/)** — canonical event envelope, trust-review contracts, evidence-graph contracts, forensic-input contracts, and session schema validation.
-- **[@xiaolei.shawn/mcp-server](mcp-server/)** — MCP gateway server plus local dashboard API for recording, importing, replaying, and trust-analyzing agent sessions.
+- **[@xiaolei.shawn/mcp-server](mcp-server/)** — fully local MCP gateway server that records agent sessions and serves a local dashboard for replay, Trust Review, evidence graph inspection, and forensic workflows.
 - **[webapp](webapp/)** — local replay and Trust Review UI for session inspection, evidence navigation, evidence graph visualization, and forensic input attachment.
 
 ## Install

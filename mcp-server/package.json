@@ -1,7 +1,7 @@
 {
   "name": "@xiaolei.shawn/mcp-server",
   "version": "0.5.0",
-  "description": "Local-first MCP server for AI agent session recording, trust review, evidence-graph analysis, forensic input ingestion, and embedded dashboard APIs.",
+  "description": "Fully local MCP server for AI agent session recording, trust review, evidence-graph analysis, forensic input ingestion, and a locally served dashboard.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
