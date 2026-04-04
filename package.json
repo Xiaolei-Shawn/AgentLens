@@ -1,7 +1,7 @@
 {
   "name": "agentlens-monorepo",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "AgentLens monorepo for local-first AI agent trust review, session replay, evidence graph analysis, and forensic auditing.",
   "packageManager": "pnpm@10.13.1",
   "scripts": {
