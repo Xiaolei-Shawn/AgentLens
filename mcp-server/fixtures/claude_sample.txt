@@ -1,0 +1,9 @@
+Claude Code v0.1 transcript
+Session: claude-demo
+
+User: Review the ingest pipeline and suggest where to add Claude Code transcript support.
+Thinking: I should inspect the existing adapters and mirror their normalization strategy before proposing changes.
+Command: rg -n "cursor_raw|codex_jsonl|adapter|ingest" mcp-server/src mcp-server/README.md
+Command Output: Found adapter registration in src/adapters/index.ts and ingest entrypoints in src/ingest.ts and src/index.ts.
+Assistant: The existing ingest path already supports peer raw adapters. I can add Claude Code as a third adapter with conservative transcript parsing.
+Token Usage: input_tokens=182 output_tokens=76 total_tokens=258

@@ -1,0 +1,6 @@
+{"type":"claude_session_meta","timestamp":"2026-04-04T09:00:00.000Z","source":"claude_code","payload":{"session_id":"structured_fixture_1","goal":"Review structured Claude ingest","user_prompt":"Review structured Claude ingest and preserve tool activity","provider":"anthropic","model":"claude-code"}}
+{"type":"claude_message","timestamp":"2026-04-04T09:00:01.000Z","source":"claude_code","payload":{"role":"user","text":"Review structured Claude ingest and preserve tool activity","provider":"anthropic"}}
+{"type":"claude_message","timestamp":"2026-04-04T09:00:02.000Z","source":"claude_code","payload":{"role":"assistant","text":"I will inspect the current adapters and mirror the structured Codex normalization path.","provider":"anthropic"}}
+{"type":"claude_tool_use","timestamp":"2026-04-04T09:00:03.000Z","source":"claude_code","payload":{"name":"read_file","input":"{\"path\":\"mcp-server/src/adapters/codex.ts\"}","call_id":"tool_1","provider":"anthropic"}}
+{"type":"claude_tool_result","timestamp":"2026-04-04T09:00:04.000Z","source":"claude_code","payload":{"name":"read_file","output":"adapter source read","call_id":"tool_1","provider":"anthropic"}}
+{"type":"claude_token_usage","timestamp":"2026-04-04T09:00:05.000Z","source":"claude_code","payload":{"usage":{"input_tokens":210,"output_tokens":95,"total_tokens":305},"provider":"anthropic"}}

@@ -15,6 +15,7 @@ import {
   type TrustState,
 } from "../lib/trustReview";
 import { EvidenceGraphPanel } from "./EvidenceGraphPanel";
+import { deriveTrustNarrative, groupOutboundRows } from "../lib/trustPresentation";
 
 import "./TrustReviewView.css";
 
@@ -159,6 +160,24 @@ function EvidenceChips({
   );
 }
 
+function NarrativePanel({ title, items }: { title: string; items: string[] }) {
+  return (
+    <article className="trust-review__narrative-card">
+      <header className="trust-review__panel-head">
+        <div>
+          <p className="trust-review__eyebrow">{title}</p>
+          <h3>{title}</h3>
+        </div>
+      </header>
+      <ul className="trust-review__summary-list trust-review__summary-list--compact">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function OutboundMatrix({
   session,
   rows,
@@ -168,6 +187,9 @@ function OutboundMatrix({
   rows: TrustOutboundRow[];
   onSeek?: (index: number) => void;
 }) {
+  const [showRawEvidence, setShowRawEvidence] = useState(false);
+  const groups = useMemo(() => groupOutboundRows(rows), [rows]);
+
   return (
     <section className="trust-review__panel trust-review__panel--matrix">
       <header className="trust-review__panel-head">
@@ -175,53 +197,83 @@ function OutboundMatrix({
           <p className="trust-review__eyebrow">Outbound Matrix</p>
           <h3>Where session data appears to travel</h3>
         </div>
-        <p className="trust-review__panel-note">Live backend trust telemetry populates this matrix.</p>
+        <div className="trust-review__panel-actions">
+          <p className="trust-review__panel-note">Grouped by destination behavior, not raw event blobs.</p>
+          <label className="trust-review__toggle">
+            <input
+              type="checkbox"
+              checked={showRawEvidence}
+              onChange={(event) => setShowRawEvidence(event.target.checked)}
+            />
+            <span>Show raw evidence</span>
+          </label>
+        </div>
       </header>
 
       {rows.length === 0 ? (
         <p className="trust-review__empty-inline">No outbound surfaces were returned for this session.</p>
       ) : (
-        <div className="trust-review__table-wrap">
-          <table className="trust-review__table">
-            <thead>
-              <tr>
-                <th>Endpoint</th>
-                <th>Type</th>
-                <th>Data Classes</th>
-                <th>Visibility</th>
-                <th>Risk</th>
-                <th>Source</th>
-                <th>Evidence</th>
-              </tr>
-            </thead>
-            <tbody>
-      {rows.map((row) => (
-                <tr key={`${row.endpoint}-${row.endpoint_type}`}>
-                  <td>
-                    <strong>{row.endpoint}</strong>
-                    <div className="trust-review__table-subtext">
-                      {row.user_visible ? "Visible to user" : "Not user visible"}
+        <div className="trust-review__outbound-groups">
+          {groups.map((group) => (
+            <article key={group.endpoint_type} className="trust-review__outbound-group">
+              <header className="trust-review__outbound-group-head">
+                <div>
+                  <h4>{group.title}</h4>
+                  <p>{group.summary}</p>
+                </div>
+                <span className="trust-review__graph-pill">{group.rows.length} destinations</span>
+              </header>
+
+              <div className="trust-review__outbound-list">
+                {group.rows.map((presented) => (
+                  <article
+                    key={`${presented.row.endpoint}-${presented.row.endpoint_type}`}
+                    className={`trust-review__outbound-row ${presented.is_low_signal ? "is-compressed" : ""}`}
+                  >
+                    <div className="trust-review__outbound-row-head">
+                      <div>
+                        <div className="trust-review__outbound-title-row">
+                          <strong>{presented.destination}</strong>
+                          <SeverityBadge severity={presented.row.risk_level} />
+                        </div>
+                        <p className="trust-review__outbound-meta">
+                          {presented.category_label}
+                          {presented.destination_detail ? ` · ${presented.destination_detail}` : ""}
+                        </p>
+                      </div>
+                      <span className="trust-review__graph-count">{presented.event_count}</span>
                     </div>
-                  </td>
-                  <td>{row.endpoint_type}</td>
-                  <td>{row.data_classes.join(", ")}</td>
-                  <td>{row.content_visibility}</td>
-                  <td>
-                    <SeverityBadge severity={row.risk_level} />
-                  </td>
-                  <td>
-                    <EvidenceSourcePill source={row.evidence_sources?.[0]} sources={row.evidence_sources} />
-                    {!row.evidence_sources || row.evidence_sources.length === 0 ? (
-                      <span className="trust-review__muted">—</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <EvidenceChips session={session} eventIds={row.event_ids} onSeek={onSeek} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+                    <div className="trust-review__outbound-summary">
+                      <p>{presented.payload_summary}</p>
+                      <span>{presented.payload_detail}</span>
+                    </div>
+
+                    <div className="trust-review__outbound-foot">
+                      <EvidenceSourcePill
+                        source={presented.row.evidence_sources?.[0]}
+                        sources={presented.row.evidence_sources}
+                      />
+                      <span className="trust-review__muted">
+                        {presented.event_count} evidence event{presented.event_count === 1 ? "" : "s"}
+                      </span>
+                    </div>
+
+                    <details className="trust-review__disclosure">
+                      <summary>{showRawEvidence ? "Hide evidence" : "Inspect evidence"}</summary>
+                      <div className="trust-review__disclosure-body">
+                        <p className="trust-review__outbound-raw">
+                          Raw classes: {presented.row.data_classes.length > 0 ? presented.row.data_classes.join(", ") : "none"}
+                        </p>
+                        <p className="trust-review__outbound-raw">Raw endpoint: {presented.row.endpoint}</p>
+                        <EvidenceChips session={session} eventIds={presented.row.event_ids} onSeek={onSeek} />
+                      </div>
+                    </details>
+                  </article>
+                ))}
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </section>
@@ -347,6 +399,7 @@ export function TrustReviewView({ session, onSeek }: TrustReviewViewProps) {
       transparency: response?.transparency_findings.length ?? 0,
     };
   }, [response, session.events]);
+  const narrative = useMemo(() => (response ? deriveTrustNarrative(response) : null), [response]);
 
   function handleForensicAttached() {
     setRefreshToken((value) => value + 1);
@@ -409,6 +462,13 @@ export function TrustReviewView({ session, onSeek }: TrustReviewViewProps) {
         <CountCard label="Control findings" value={metrics.control.toString()} accent="rgba(34, 197, 94, 0.85)" />
         <CountCard label="Transparency findings" value={metrics.transparency.toString()} accent="rgba(245, 158, 11, 0.85)" />
       </div>
+
+      {narrative ? (
+        <div className="trust-review__narrative-row">
+          <NarrativePanel title="Key takeaways" items={narrative.takeaways} />
+          <NarrativePanel title="Where to inspect next" items={narrative.next_steps} />
+        </div>
+      ) : null}
 
       <StateBanner title={bannerTitle} body={bannerBody} tone={phase === "degraded" ? "degraded" : "ready"} />
 

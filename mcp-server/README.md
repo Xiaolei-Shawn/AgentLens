@@ -208,6 +208,18 @@ Example: ingest Cursor raw logs that contain `<user_query>`, `<think>`, and `Too
 agentlens ingest --input /path/to/cursor-log.txt --adapter cursor_raw
 ```
 
+Example: ingest Claude Code CLI transcripts that contain visible `User:`, `Assistant:`, `Command:`, and `Command Output:` sections:
+
+```bash
+agentlens ingest --input /path/to/claude-transcript.txt --adapter claude_code_transcript
+```
+
+Example: ingest Claude Code structured JSONL logs:
+
+```bash
+agentlens ingest --input /path/to/claude-structured.jsonl --adapter claude_code_jsonl
+```
+
 Auto-detect adapter and merge into an existing session with dedupe:
 
 ```bash
@@ -222,6 +234,8 @@ Notes:
 - Duplicate events are skipped by default (exact or semantic key depending on merge).
 - Codex adapter preserves user prompts, reasoning summaries, assistant outputs, tool calls/results, and normalized token checkpoints.
 - Cursor adapter preserves user queries, `<think>` reasoning traces, tool call/result traces, and token counters when present.
+- Claude adapter preserves visible user messages, assistant output, command/tool calls, command results, and token counters when present in CLI transcripts.
+- Claude structured adapter preserves explicit session metadata, user/assistant messages, tool calls/results, and numeric token usage from JSONL logs when Claude-specific signals are present.
 - If `--merge-session` is omitted, ingest attempts **fingerprint match** automatically:
   - Primary signal: normalized user prompt / intent similarity
   - Secondary signal: timestamp proximity (recent sessions weighted higher)

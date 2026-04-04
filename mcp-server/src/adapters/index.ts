@@ -1,8 +1,10 @@
+import { claudeCodeJsonlAdapter } from "./claude-jsonl.js";
+import { claudeCodeTranscriptAdapter } from "./claude.js";
 import { codexJsonlAdapter } from "./codex.js";
 import { cursorRawAdapter } from "./cursor.js";
 import type { AdaptedSession, RawAdapter } from "./types.js";
 
-const adapters: RawAdapter[] = [codexJsonlAdapter, cursorRawAdapter];
+const adapters: RawAdapter[] = [codexJsonlAdapter, cursorRawAdapter, claudeCodeTranscriptAdapter, claudeCodeJsonlAdapter];
 
 export function getAdapters(): RawAdapter[] {
   return adapters;

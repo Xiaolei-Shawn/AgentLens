@@ -108,7 +108,14 @@
   gap: 0.75rem;
 }
 
+.trust-review__narrative-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
 .trust-review__summary-card,
+.trust-review__narrative-card,
 .trust-review__count-card,
 .trust-review__panel,
 .trust-review__state-banner,
@@ -119,6 +126,10 @@
 }
 
 .trust-review__summary-card {
+  padding: 0.95rem;
+}
+
+.trust-review__narrative-card {
   padding: 0.95rem;
 }
 
@@ -165,6 +176,10 @@
   display: grid;
   gap: 0.3rem;
   color: rgba(226, 232, 240, 0.92);
+}
+
+.trust-review__summary-list--compact {
+  margin-top: 0.4rem;
 }
 
 .trust-review__count-card {
@@ -591,6 +606,11 @@
   background: rgba(8, 47, 73, 0.36);
 }
 
+.trust-review__graph-card.is-dimmed,
+.trust-review__graph-edge.is-dimmed {
+  opacity: 0.42;
+}
+
 .trust-review__graph-card-head,
 .trust-review__graph-edge-top {
   display: flex;
@@ -610,6 +630,12 @@
 .trust-review__graph-desc {
   color: rgba(203, 213, 225, 0.82);
   margin: 0;
+}
+
+.trust-review__graph-meta {
+  margin: 0.28rem 0 0;
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 0.76rem;
 }
 
 .trust-review__graph-type {
@@ -662,6 +688,57 @@
   margin-bottom: 0.5rem;
 }
 
+.trust-review__graph-focus {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  padding: 0.8rem;
+}
+
+.trust-review__graph-focus-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.55rem;
+}
+
+.trust-review__graph-focus-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.42);
+  color: inherit;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.trust-review__graph-focus-card.is-selected {
+  border-color: rgba(45, 212, 191, 0.52);
+  background: rgba(6, 78, 59, 0.28);
+}
+
+.trust-review__graph-focus-card span {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 0.78rem;
+}
+
+.trust-review__graph-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.trust-review__inline-button {
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.4);
+  color: rgba(224, 242, 254, 0.95);
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
 @media (max-width: 920px) {
   .trust-review__analysis-grid,
   .trust-review__forensic-grid,
@@ -688,10 +765,128 @@
   margin-bottom: 0.75rem;
 }
 
+.trust-review__panel-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+}
+
 .trust-review__panel-note {
   max-width: 24ch;
   text-align: right;
   font-size: 0.8rem;
+}
+
+.trust-review__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.trust-review__outbound-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.trust-review__outbound-group {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.trust-review__outbound-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.trust-review__outbound-group-head h4 {
+  margin: 0;
+}
+
+.trust-review__outbound-group-head p,
+.trust-review__outbound-meta,
+.trust-review__outbound-summary span,
+.trust-review__outbound-raw {
+  margin: 0.2rem 0 0;
+  color: rgba(203, 213, 225, 0.82);
+}
+
+.trust-review__outbound-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.trust-review__outbound-row {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.trust-review__outbound-row.is-compressed {
+  opacity: 0.76;
+}
+
+.trust-review__outbound-row-head,
+.trust-review__outbound-foot,
+.trust-review__outbound-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.trust-review__outbound-title-row strong {
+  font-size: 0.95rem;
+}
+
+.trust-review__outbound-summary {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.trust-review__outbound-summary p {
+  margin: 0;
+  color: rgba(241, 245, 249, 0.96);
+}
+
+.trust-review__disclosure {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 0.5rem;
+}
+
+.trust-review__disclosure summary {
+  cursor: pointer;
+  color: rgba(125, 211, 252, 0.96);
+  font-size: 0.78rem;
+}
+
+.trust-review__disclosure-body {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.trust-review__code-block {
+  margin: 0;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.72);
+  padding: 0.7rem;
+  overflow: auto;
+  color: rgba(226, 232, 240, 0.94);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .trust-review__table-wrap {
@@ -895,6 +1090,7 @@
 }
 
 @media (max-width: 1080px) {
+  .trust-review__narrative-row,
   .trust-review__summary-row,
   .trust-review__skeleton-grid {
     grid-template-columns: 1fr;
@@ -916,6 +1112,10 @@
 
   .trust-review__hero-meta {
     align-items: flex-start;
+  }
+
+  .trust-review__panel-actions {
+    justify-items: start;
   }
 
   .trust-review__panel-note {

@@ -42,6 +42,62 @@ describe("adapters", () => {
     assert.ok(kinds.includes("session_end"), "has session_end");
   });
 
+  it("claude_code_transcript adapts sample and produces session_start, intent, tool_call, session_end", () => {
+    const raw = readFileSync(fixturePath("claude_sample.txt"), "utf-8");
+    const adapted = adaptRawContent(raw, "claude_code_transcript");
+    assert.strictEqual(adapted.source, "claude_code_transcript");
+    assert.ok(adapted.session_id?.startsWith("claude_"));
+    assert.ok(adapted.user_prompt?.startsWith("Review the ingest pipeline"));
+    const kinds = adapted.events.map((e) => e.kind);
+    assert.ok(kinds.includes("session_start"), "has session_start");
+    assert.ok(kinds.includes("intent"), "has intent");
+    assert.ok(kinds.includes("session_end"), "has session_end");
+    assert.ok(kinds.includes("tool_call") || kinds.includes("artifact_created"), "has tool_call or artifact_created");
+    assert.ok(
+      adapted.events.some(
+        (event) =>
+          event.kind === "artifact_created" &&
+          event.payload.artifact_type === "assistant_message" &&
+          typeof event.payload.text === "string"
+      ),
+      "preserves assistant output"
+    );
+  });
+
+  it("claude_code_jsonl adapts sample and produces session_start, intent, tool_call, session_end", () => {
+    const raw = readFileSync(fixturePath("claude_structured_sample.jsonl"), "utf-8");
+    const adapted = adaptRawContent(raw, "claude_code_jsonl");
+    assert.strictEqual(adapted.source, "claude_code_jsonl");
+    assert.strictEqual(adapted.session_id, "claude_structured_fixture_1");
+    assert.strictEqual(adapted.user_prompt, "Review structured Claude ingest and preserve tool activity");
+    const kinds = adapted.events.map((e) => e.kind);
+    assert.ok(kinds.includes("session_start"), "has session_start");
+    assert.ok(kinds.includes("intent"), "has intent");
+    assert.ok(kinds.includes("session_end"), "has session_end");
+    assert.ok(kinds.includes("tool_call") || kinds.includes("artifact_created"), "has tool_call or artifact_created");
+    assert.ok(
+      adapted.events.some(
+        (event) =>
+          event.kind === "artifact_created" &&
+          event.payload.artifact_type === "assistant_message" &&
+          typeof event.payload.text === "string"
+      ),
+      "preserves assistant output"
+    );
+    assert.ok(
+      !adapted.events.some(
+        (event) =>
+          event.kind === "artifact_created" &&
+          event.payload.artifact_type === "reasoning"
+      ),
+      "does not fabricate reasoning events"
+    );
+    assert.ok(
+      adapted.events.some((event) => event.kind === "token_usage_checkpoint"),
+      "emits token usage when numeric usage is present"
+    );
+  });
+
   it("auto adapter selects cursor_raw for cursor-style content", () => {
     const raw = readFileSync(fixturePath("cursor_sample.txt"), "utf-8");
     const adapted = adaptRawContent(raw, "auto");
@@ -52,6 +108,38 @@ describe("adapters", () => {
     const raw = readFileSync(fixturePath("codex_sample.jsonl"), "utf-8");
     const adapted = adaptRawContent(raw, "auto");
     assert.strictEqual(adapted.source, "codex_jsonl");
+  });
+
+  it("auto adapter selects claude_code_transcript for Claude transcript content", () => {
+    const raw = readFileSync(fixturePath("claude_sample.txt"), "utf-8");
+    const adapted = adaptRawContent(raw, "auto");
+    assert.strictEqual(adapted.source, "claude_code_transcript");
+  });
+
+  it("auto adapter selects claude_code_jsonl for Claude structured content", () => {
+    const raw = readFileSync(fixturePath("claude_structured_sample.jsonl"), "utf-8");
+    const adapted = adaptRawContent(raw, "auto");
+    assert.strictEqual(adapted.source, "claude_code_jsonl");
+  });
+
+  it("auto adapter does not claim ambiguous generic JSONL", () => {
+    const raw = [
+      JSON.stringify({ type: "message", payload: { role: "user", text: "hello" } }),
+      JSON.stringify({ type: "message", payload: { role: "assistant", text: "hi" } }),
+    ].join("\n");
+    assert.throws(() => adaptRawContent(raw, "auto"), /No raw adapter matched input/);
+  });
+
+  it("claude_code_jsonl fails cleanly for valid JSONL without Claude signals", () => {
+    const raw = [
+      JSON.stringify({ type: "message", payload: { role: "user", text: "hello" } }),
+      JSON.stringify({ type: "message", payload: { role: "assistant", text: "hi" } }),
+    ].join("\n");
+    assert.throws(() => adaptRawContent(raw, "claude_code_jsonl"), /No Claude Code structured JSONL records detected/);
+  });
+
+  it("claude_code_jsonl fails cleanly for invalid JSONL", () => {
+    assert.throws(() => adaptRawContent("not-json", "claude_code_jsonl"), /Invalid JSONL line 1/);
   });
 });
 
@@ -127,6 +215,81 @@ describe("ingest", () => {
     assert.ok(result.session_id);
     assert.strictEqual(result.adapter, "codex_jsonl");
     assert.ok(result.inserted > 0);
+  });
+
+  it("ingest creates new session from Claude transcript", () => {
+    const raw = readFileSync(fixturePath("claude_sample.txt"), "utf-8");
+    const result = ingestRawContent(raw, { adapter: "claude_code_transcript" });
+    assert.ok(result.session_id);
+    assert.strictEqual(result.adapter, "claude_code_transcript");
+    assert.strictEqual(result.merge_strategy, "new_session");
+    assert.ok(result.inserted > 0);
+    const events = readSessionEvents(result.session_id);
+    assert.strictEqual(events.length, result.inserted);
+  });
+
+  it("ingest creates new session from Claude structured JSONL", () => {
+    const raw = readFileSync(fixturePath("claude_structured_sample.jsonl"), "utf-8");
+    const result = ingestRawContent(raw, { adapter: "claude_code_jsonl" });
+    assert.ok(result.session_id);
+    assert.strictEqual(result.session_id, "claude_structured_fixture_1");
+    assert.strictEqual(result.adapter, "claude_code_jsonl");
+    assert.strictEqual(result.merge_strategy, "new_session");
+    assert.ok(result.inserted > 0);
+    const events = readSessionEvents(result.session_id);
+    assert.strictEqual(events.length, result.inserted);
+  });
+
+  it("Claude transcript merge preserves semantic dedupe and ordering", () => {
+    const raw = readFileSync(fixturePath("claude_sample.txt"), "utf-8");
+    const first = ingestRawContent(raw, { adapter: "claude_code_transcript" });
+    const sessionId = first.session_id;
+    const before = readSessionEvents(sessionId).length;
+
+    const second = ingestRawContent(raw, {
+      adapter: "claude_code_transcript",
+      merge_session_id: sessionId,
+    });
+    assert.strictEqual(second.session_id, sessionId);
+    assert.strictEqual(second.merge_strategy, "explicit_merge");
+    assert.ok(second.skipped_duplicates > 0, "dedupe skips repeated Claude transcript events");
+
+    const afterEvents = readSessionEvents(sessionId);
+    assert.ok(afterEvents.length <= before + 1, "merge grows event count by at most one");
+    for (let i = 1; i < afterEvents.length; i++) {
+      const a = afterEvents[i - 1];
+      const b = afterEvents[i];
+      assert.ok(
+        a.ts <= b.ts || (a.ts === b.ts && (a.seq ?? 0) <= (b.seq ?? 0)),
+        `events ordered: ${a.seq} (${a.ts}) before ${b.seq} (${b.ts})`
+      );
+    }
+  });
+
+  it("Claude structured JSONL merge preserves semantic dedupe and ordering", () => {
+    const raw = readFileSync(fixturePath("claude_structured_sample.jsonl"), "utf-8");
+    const first = ingestRawContent(raw, { adapter: "claude_code_jsonl" });
+    const sessionId = first.session_id;
+    const before = readSessionEvents(sessionId).length;
+
+    const second = ingestRawContent(raw, {
+      adapter: "claude_code_jsonl",
+      merge_session_id: sessionId,
+    });
+    assert.strictEqual(second.session_id, sessionId);
+    assert.strictEqual(second.merge_strategy, "explicit_merge");
+    assert.ok(second.skipped_duplicates > 0, "dedupe skips repeated Claude structured events");
+
+    const afterEvents = readSessionEvents(sessionId);
+    assert.ok(afterEvents.length <= before + 1, "merge grows event count by at most one");
+    for (let i = 1; i < afterEvents.length; i++) {
+      const a = afterEvents[i - 1];
+      const b = afterEvents[i];
+      assert.ok(
+        a.ts <= b.ts || (a.ts === b.ts && (a.seq ?? 0) <= (b.seq ?? 0)),
+        `events ordered: ${a.seq} (${a.ts}) before ${b.seq} (${b.ts})`
+      );
+    }
   });
 
   it("merge raw log from different day: time window filters out all raw events", () => {

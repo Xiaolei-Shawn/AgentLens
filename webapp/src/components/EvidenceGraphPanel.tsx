@@ -5,11 +5,15 @@ import {
   EvidenceGraphApiError,
   fetchEvidenceGraph,
   findEventIndexById,
-  type EvidenceGraphEdge,
-  type EvidenceGraphNode,
   type EvidenceGraphResponse,
   type EvidenceGraphState,
 } from "../lib/evidenceGraph";
+import {
+  presentEvidenceGraph,
+  type KeyChain,
+  type PresentedGraphEdge,
+  type PresentedGraphNode,
+} from "../lib/evidenceGraphPresentation";
 
 interface EvidenceGraphPanelProps {
   session: Session;
@@ -20,8 +24,7 @@ interface EvidenceGraphPanelProps {
 function StatePill({ state }: { state: Exclude<EvidenceGraphState, "loading"> }) {
   const label =
     state === "ready" ? "Live graph" : state === "degraded" ? "Degraded" : state === "empty" ? "Empty" : "Error";
-  const tone =
-    state === "ready" ? "live" : state === "error" ? "danger" : "neutral";
+  const tone = state === "ready" ? "live" : state === "error" ? "danger" : "neutral";
   return <span className={`trust-review__state-pill trust-review__state-pill--${tone}`}>{label}</span>;
 }
 
@@ -57,9 +60,7 @@ function EventChips({
   onSeek?: (index: number) => void;
 }) {
   const uniqueIds = [...new Set(eventIds)];
-  if (uniqueIds.length === 0) {
-    return <span className="trust-review__muted">No evidence links</span>;
-  }
+  if (uniqueIds.length === 0) return <span className="trust-review__muted">No evidence links</span>;
 
   return (
     <div className="trust-review__chips">
@@ -88,30 +89,31 @@ function GraphNodeCard({
   node,
   selected,
   connected,
+  dimmed,
   onSelect,
 }: {
-  node: EvidenceGraphNode;
+  node: PresentedGraphNode;
   selected: boolean;
   connected: boolean;
+  dimmed: boolean;
   onSelect: (nodeId: string) => void;
 }) {
   return (
     <button
       type="button"
-      className={`trust-review__graph-card ${selected ? "is-selected" : ""} ${connected ? "is-connected" : ""}`}
-      onClick={() => onSelect(node.id)}
+      className={`trust-review__graph-card ${selected ? "is-selected" : ""} ${connected ? "is-connected" : ""} ${dimmed ? "is-dimmed" : ""}`}
+      onClick={() => onSelect(node.node.id)}
     >
       <div className="trust-review__graph-card-head">
         <div>
-          <p className="trust-review__graph-type">{node.type}</p>
-          <h4>{node.label}</h4>
-          <EvidenceSourcePill source={node.source} sources={node.sources} />
+          <p className="trust-review__graph-type">{node.node.type}</p>
+          <h4>{node.primary_label}</h4>
+          <EvidenceSourcePill source={node.node.source} sources={node.node.sources} />
         </div>
-        <span className="trust-review__graph-count">{node.event_ids.length}</span>
+        <span className="trust-review__graph-count">{node.node.event_ids.length}</span>
       </div>
-      <p className="trust-review__graph-desc">
-        {node.description ?? "Session evidence node derived from backend graph analysis."}
-      </p>
+      {node.secondary_label ? <p className="trust-review__graph-meta">{node.secondary_label}</p> : null}
+      <p className="trust-review__graph-desc">{node.preview ?? node.why_it_matters}</p>
     </button>
   );
 }
@@ -120,31 +122,78 @@ function GraphEdgeRow({
   edge,
   selected,
   connected,
+  dimmed,
   onSelect,
 }: {
-  edge: EvidenceGraphEdge;
+  edge: PresentedGraphEdge;
   selected: boolean;
   connected: boolean;
+  dimmed: boolean;
   onSelect: (edgeId: string) => void;
 }) {
   return (
     <button
       type="button"
-      className={`trust-review__graph-edge ${selected ? "is-selected" : ""} ${connected ? "is-connected" : ""}`}
-      onClick={() => onSelect(edge.id)}
+      className={`trust-review__graph-edge ${selected ? "is-selected" : ""} ${connected ? "is-connected" : ""} ${dimmed ? "is-dimmed" : ""}`}
+      onClick={() => onSelect(edge.edge.id)}
     >
       <div className="trust-review__graph-edge-top">
-        <strong>{edge.type}</strong>
-        <span>{edge.event_ids.length} event(s)</span>
+        <strong>{edge.primary_label}</strong>
+        <span>{edge.edge.event_ids.length} event(s)</span>
       </div>
       <div className="trust-review__graph-edge-flow">
-        <span>{edge.from}</span>
-        <span aria-hidden>→</span>
-        <span>{edge.to}</span>
+        <span>{edge.secondary_label}</span>
       </div>
-      <EvidenceSourcePill source={edge.source} sources={edge.sources} />
-      {edge.label ? <p className="trust-review__graph-desc">{edge.label}</p> : null}
+      {edge.preview ? <p className="trust-review__graph-desc">{edge.preview}</p> : null}
+      <EvidenceSourcePill source={edge.edge.source} sources={edge.edge.sources} />
     </button>
+  );
+}
+
+function KeyChainList({
+  chains,
+  selectedChainId,
+  onSelect,
+}: {
+  chains: KeyChain[];
+  selectedChainId: string | null;
+  onSelect: (chainId: string | null) => void;
+}) {
+  if (chains.length === 0) return null;
+  return (
+    <section className="trust-review__graph-focus">
+      <div className="trust-review__graph-column-head">
+        <h4>Key chains</h4>
+        <button type="button" className="trust-review__inline-button" onClick={() => onSelect(null)}>
+          Clear focus
+        </button>
+      </div>
+      <div className="trust-review__graph-focus-list">
+        {chains.map((chain) => (
+          <button
+            key={chain.id}
+            type="button"
+            className={`trust-review__graph-focus-card ${selectedChainId === chain.id ? "is-selected" : ""}`}
+            onClick={() => onSelect(chain.id)}
+          >
+            <strong>{chain.label}</strong>
+            <span>{chain.node_ids.length} nodes · {chain.edge_ids.length} edges</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RawExcerpt({ value }: { value?: string }) {
+  if (!value) return null;
+  return (
+    <details className="trust-review__disclosure">
+      <summary>View excerpt</summary>
+      <div className="trust-review__disclosure-body">
+        <pre className="trust-review__code-block">{value}</pre>
+      </div>
+    </details>
   );
 }
 
@@ -154,6 +203,8 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
   const [errorMessage, setErrorMessage] = useState<string>("Evidence graph could not be loaded.");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
+  const [showAllNodes, setShowAllNodes] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,55 +244,81 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
     }
 
     void loadEvidenceGraph();
-
     return () => controller.abort();
   }, [session.id, refreshKey]);
 
+  const presented = useMemo(() => (response ? presentEvidenceGraph(response) : null), [response]);
+  const presentedNodeMap = useMemo(
+    () => new Map((presented?.nodes ?? []).map((node) => [node.node.id, node])),
+    [presented],
+  );
+  const presentedEdgeMap = useMemo(
+    () => new Map((presented?.edges ?? []).map((edge) => [edge.edge.id, edge])),
+    [presented],
+  );
+
   useEffect(() => {
-    if (!response) {
+    if (!response || !presented) {
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
+      setSelectedChainId(null);
       return;
     }
-    setSelectedNodeId((current) => current ?? response.nodes[0]?.id ?? null);
-    setSelectedEdgeId((current) => current ?? response.edges[0]?.id ?? null);
-  }, [response]);
+    setSelectedNodeId((current) => current ?? presented.nodes[0]?.node.id ?? null);
+    setSelectedEdgeId((current) => current ?? presented.edges[0]?.edge.id ?? null);
+  }, [presented, response]);
 
-  const selectedNode = useMemo(
-    () => response?.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [response, selectedNodeId],
-  );
-  const selectedEdge = useMemo(
-    () => response?.edges.find((edge) => edge.id === selectedEdgeId) ?? null,
-    [response, selectedEdgeId],
-  );
+  const selectedNode = selectedNodeId ? presentedNodeMap.get(selectedNodeId) ?? null : null;
+  const selectedEdge = selectedEdgeId ? presentedEdgeMap.get(selectedEdgeId) ?? null : null;
+  const selectedChain = presented?.key_chains.find((chain) => chain.id === selectedChainId) ?? null;
 
   const connectedNodeIds = useMemo(() => {
-    if (!response || !selectedNode) return new Set<string>();
-    const connected = new Set<string>();
-    connected.add(selectedNode.id);
+    if (!response) return new Set<string>();
+    if (selectedChain) return new Set(selectedChain.node_ids);
+    if (!selectedNodeId) return new Set<string>();
+    const connected = new Set<string>([selectedNodeId]);
     for (const edge of response.edges) {
-      if (edge.from === selectedNode.id) connected.add(edge.to);
-      if (edge.to === selectedNode.id) connected.add(edge.from);
+      if (edge.from === selectedNodeId) connected.add(edge.to);
+      if (edge.to === selectedNodeId) connected.add(edge.from);
     }
     return connected;
-  }, [response, selectedNode]);
+  }, [response, selectedChain, selectedNodeId]);
 
   const connectedEdgeIds = useMemo(() => {
     if (!response) return new Set<string>();
+    if (selectedChain) return new Set(selectedChain.edge_ids);
     const ids = new Set<string>();
-    if (selectedNode) {
+    if (selectedNodeId) {
       for (const edge of response.edges) {
-        if (edge.from === selectedNode.id || edge.to === selectedNode.id) ids.add(edge.id);
+        if (edge.from === selectedNodeId || edge.to === selectedNodeId) ids.add(edge.id);
       }
     }
-    if (selectedEdge) {
-      ids.add(selectedEdge.id);
-      ids.add(selectedEdge.from);
-      ids.add(selectedEdge.to);
+    if (selectedEdgeId) ids.add(selectedEdgeId);
+    return ids;
+  }, [response, selectedChain, selectedEdgeId, selectedNodeId]);
+
+  const visibleNodeIds = useMemo(() => {
+    if (!presented) return new Set<string>();
+    if (selectedChain) return new Set(selectedChain.node_ids);
+    if (showAllNodes) return new Set(presented.nodes.map((node) => node.node.id));
+    const ids = new Set<string>();
+    for (const node of presented.nodes) {
+      if (!presented.hidden_node_ids.has(node.node.id)) ids.add(node.node.id);
     }
     return ids;
-  }, [response, selectedEdge, selectedNode]);
+  }, [presented, selectedChain, showAllNodes]);
+
+  const visibleNodes = useMemo(
+    () => (presented?.nodes ?? []).filter((node) => visibleNodeIds.has(node.node.id)),
+    [presented, visibleNodeIds],
+  );
+  const visibleEdges = useMemo(
+    () =>
+      (presented?.edges ?? []).filter(
+        (edge) => visibleNodeIds.has(edge.edge.from) && visibleNodeIds.has(edge.edge.to),
+      ),
+    [presented, visibleNodeIds],
+  );
 
   if (phase === "loading") {
     return (
@@ -288,7 +365,7 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
     );
   }
 
-  if (!response) {
+  if (!response || !presented) {
     return (
       <section className="trust-review__panel trust-review__panel--graph">
         <header className="trust-review__panel-head">
@@ -314,7 +391,7 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
       ? response.degraded?.reasons.join(" ") ?? "The backend returned a degraded graph for this session."
       : phase === "empty"
         ? "The backend returned a valid response but no graph nodes or edges were available."
-        : "Use the relationship panel to inspect nodes, edges, and the supporting event sequence.";
+        : "Start with the top chains below, then drill into nodes and edges only where needed.";
 
   return (
     <section className="trust-review__panel trust-review__panel--graph">
@@ -346,20 +423,34 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
         />
       ) : (
         <>
+          <KeyChainList chains={presented.key_chains} selectedChainId={selectedChainId} onSelect={setSelectedChainId} />
+
+          {presented.hidden_node_ids.size > 0 ? (
+            <div className="trust-review__graph-controls">
+              <button type="button" className="trust-review__inline-button" onClick={() => setShowAllNodes((value) => !value)}>
+                {showAllNodes ? "Hide low-value nodes" : `Show all nodes (${presented.hidden_node_ids.size} hidden)`}
+              </button>
+            </div>
+          ) : null}
+
           <div className="trust-review__graph-grid">
             <div className="trust-review__graph-column">
               <div className="trust-review__graph-column-head">
                 <h4>Nodes</h4>
-                <span>{response.nodes.length}</span>
+                <span>{visibleNodes.length}</span>
               </div>
               <div className="trust-review__graph-list">
-                {response.nodes.map((node) => (
+                {visibleNodes.map((node) => (
                   <GraphNodeCard
-                    key={node.id}
+                    key={node.node.id}
                     node={node}
-                    selected={node.id === selectedNodeId}
-                    connected={connectedNodeIds.has(node.id)}
-                    onSelect={setSelectedNodeId}
+                    selected={node.node.id === selectedNodeId}
+                    connected={connectedNodeIds.has(node.node.id)}
+                    dimmed={connectedNodeIds.size > 0 && !connectedNodeIds.has(node.node.id)}
+                    onSelect={(nodeId) => {
+                      setSelectedChainId(null);
+                      setSelectedNodeId(nodeId);
+                    }}
                   />
                 ))}
               </div>
@@ -368,16 +459,20 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
             <div className="trust-review__graph-column">
               <div className="trust-review__graph-column-head">
                 <h4>Edges</h4>
-                <span>{response.edges.length}</span>
+                <span>{visibleEdges.length}</span>
               </div>
               <div className="trust-review__graph-list">
-                {response.edges.map((edge) => (
+                {visibleEdges.map((edge) => (
                   <GraphEdgeRow
-                    key={edge.id}
+                    key={edge.edge.id}
                     edge={edge}
-                    selected={edge.id === selectedEdgeId}
-                    connected={connectedEdgeIds.has(edge.id)}
-                    onSelect={setSelectedEdgeId}
+                    selected={edge.edge.id === selectedEdgeId}
+                    connected={connectedEdgeIds.has(edge.edge.id)}
+                    dimmed={connectedEdgeIds.size > 0 && !connectedEdgeIds.has(edge.edge.id)}
+                    onSelect={(edgeId) => {
+                      setSelectedChainId(null);
+                      setSelectedEdgeId(edgeId);
+                    }}
                   />
                 ))}
               </div>
@@ -389,17 +484,18 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
               <header className="trust-review__graph-detail-head">
                 <div>
                   <p className="trust-review__eyebrow">Selected node</p>
-                  <h4>{selectedNode?.label ?? "None selected"}</h4>
+                  <h4>{selectedNode?.primary_label ?? "None selected"}</h4>
                 </div>
-                {selectedNode ? <span className="trust-review__graph-type">{selectedNode.type}</span> : null}
+                {selectedNode ? <span className="trust-review__graph-type">{selectedNode.node.type}</span> : null}
               </header>
               {selectedNode ? (
                 <>
-                  <p className="trust-review__graph-desc">
-                    {selectedNode.description ?? "Node derived from the backend evidence graph."}
-                  </p>
-                  <EvidenceSourcePill source={selectedNode.source} sources={selectedNode.sources} />
-                  <EventChips session={session} eventIds={selectedNode.event_ids} onSeek={onSeek} />
+                  <p className="trust-review__graph-desc">{selectedNode.why_it_matters}</p>
+                  {selectedNode.secondary_label ? <p className="trust-review__graph-meta">{selectedNode.secondary_label}</p> : null}
+                  {selectedNode.preview ? <p className="trust-review__graph-desc">{selectedNode.preview}</p> : null}
+                  <EvidenceSourcePill source={selectedNode.node.source} sources={selectedNode.node.sources} />
+                  <EventChips session={session} eventIds={selectedNode.node.event_ids} onSeek={onSeek} />
+                  <RawExcerpt value={selectedNode.raw_detail} />
                 </>
               ) : (
                 <GraphEmpty title="No node selected" body="Select a node to inspect its supporting events." />
@@ -410,17 +506,16 @@ export function EvidenceGraphPanel({ session, onSeek, refreshKey }: EvidenceGrap
               <header className="trust-review__graph-detail-head">
                 <div>
                   <p className="trust-review__eyebrow">Selected edge</p>
-                  <h4>{selectedEdge ? `${selectedEdge.from} → ${selectedEdge.to}` : "None selected"}</h4>
+                  <h4>{selectedEdge?.secondary_label ?? "None selected"}</h4>
                 </div>
-                {selectedEdge ? <span className="trust-review__graph-type">{selectedEdge.type}</span> : null}
+                {selectedEdge ? <span className="trust-review__graph-type">{selectedEdge.edge.type}</span> : null}
               </header>
               {selectedEdge ? (
                 <>
-                  <p className="trust-review__graph-desc">
-                    {selectedEdge.label ?? "Edge derived from backend evidence graph."}
-                  </p>
-                  <EvidenceSourcePill source={selectedEdge.source} sources={selectedEdge.sources} />
-                  <EventChips session={session} eventIds={selectedEdge.event_ids} onSeek={onSeek} />
+                  <p className="trust-review__graph-desc">{selectedEdge.primary_label}</p>
+                  {selectedEdge.preview ? <p className="trust-review__graph-desc">{selectedEdge.preview}</p> : null}
+                  <EvidenceSourcePill source={selectedEdge.edge.source} sources={selectedEdge.edge.sources} />
+                  <EventChips session={session} eventIds={selectedEdge.edge.event_ids} onSeek={onSeek} />
                 </>
               ) : (
                 <GraphEmpty title="No edge selected" body="Select an edge to inspect the relationship evidence." />
