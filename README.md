@@ -4,12 +4,12 @@ AgentLens (AL) is a local-first trust and audit toolkit for AI agent sessions, c
 
 - **[GitHub](https://github.com/Xiaolei-Shawn/AgentLens)** — source and issues
 
-Trust View is the session inspection surface built for the concerns highlighted by the Claude Code source leak discussion:
+Trust View helps users inspect:
 
-- hidden data egress
-- remote control paths
-- opaque prompt and tool mutation
-- background agent activity outside the visible user flow
+- outbound activity
+- control surfaces
+- transparency findings
+- background and supporting session activity
 
 ## What AgentLens does
 
@@ -54,7 +54,7 @@ After install you can use the `agentlens` (or `al-mcp`) binary instead of `npx @
 
 ## Trust View
 
-Trust View is designed around the questions a user actually cares about after running an agent:
+Trust View is designed around the questions a user may ask after running an agent:
 
 - What data left the machine?
 - What could remotely influence agent behavior?

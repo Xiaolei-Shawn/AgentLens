@@ -1,7 +1,7 @@
 {
   "name": "webapp",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "AgentLens local web UI for session replay, Trust Review, evidence graph inspection, and forensic input workflows.",
   "type": "module",
   "scripts": {

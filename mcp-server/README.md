@@ -2,26 +2,17 @@
 
 Fully local MCP server for AI agent session auditing that serves a local dashboard from the same process.
 
-The local dashboard is centered on **Trust View**, a session inspection surface for the exact trust failures highlighted by the Claude Code leak discussion:
+The local dashboard is centered on **Trust View**, a session inspection surface for reviewing:
 
-- hidden data egress
-- remote control paths
-- opaque prompt or tool mutation
-- background activity outside the visible user flow
+- outbound activity
+- control surfaces
+- transparency changes
+- background activity associated with the session
 
 - Records canonical session events via MCP tools
 - Persists events as local JSONL files
 - Runs fully on the local machine and serves a local web dashboard + API from the same process
-- Data never leaves the machine unless you explicitly move files
-
-## Open-source connector model
-
-This package is intended to be the open-source MCP connector layer.
-
-- Open source: MCP tools + canonical event capture + local storage/API serving
-- Proprietary (optional): advanced analyzer dashboard/heuristics binaries can be served separately
-
-You can point the built-in dashboard server to any static bundle via `AL_DASHBOARD_WEBAPP_DIR`.
+- Data remains local unless you explicitly move exported files or session artifacts
 
 ## Features
 
